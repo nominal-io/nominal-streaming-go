@@ -1,11 +1,9 @@
 package nominal_streaming
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"sort"
@@ -15,7 +13,6 @@ import (
 	"github.com/nominal-io/nominal-api-go/api/rids"
 	pb "github.com/nominal-io/nominal-streaming/proto"
 	"github.com/palantir/pkg/bearertoken"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -85,9 +82,7 @@ type batcher struct {
 
 	// API client
 	ctx        context.Context
-	httpClient *http.Client
-	baseURL    string
-	authToken  bearertoken.Token
+	apiClient  *nominalAPIClient
 	datasetRID rids.NominalDataSourceOrDatasetRid
 
 	mu            sync.Mutex
@@ -106,15 +101,14 @@ func newBatcher(
 	flushSize int,
 	flushPeriod time.Duration,
 ) *batcher {
+	apiClient := newNominalAPIClient(httpClient, baseURL, authToken)
 	return &batcher{
 		closeChan:     make(chan struct{}),
 		flushSize:     flushSize,
 		flushPeriod:   flushPeriod,
 		errors:        make(chan error, 100),
 		ctx:           ctx,
-		httpClient:    httpClient,
-		baseURL:       baseURL,
-		authToken:     authToken,
+		apiClient:     apiClient,
 		datasetRID:    datasetRID,
 		floatBuffers:  make(map[channelReferenceKey]*floatBuffer),
 		intBuffers:    make(map[channelReferenceKey]*intBuffer),
@@ -358,40 +352,7 @@ func (b *batcher) sendToNominal(series []*pb.Series) error {
 		Series: series,
 	}
 
-	// Serialize to protobuf
-	data, err := proto.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal protobuf: %w", err)
-	}
-
-	// Construct URL
-	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", b.baseURL, b.datasetRID.String())
-
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(b.ctx, "POST", url, bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set headers
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Set("Authorization", "Bearer "+string(b.authToken))
-
-	// Send request
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check response
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return b.apiClient.writeNominalData(b.ctx, b.datasetRID, request)
 }
 
 func hashTags(tags map[string]string) string {

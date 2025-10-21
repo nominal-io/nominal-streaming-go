@@ -1,15 +1,73 @@
 package nominal_streaming
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/nominal-io/nominal-api-go/api/rids"
+	pb "github.com/nominal-io/nominal-streaming/proto"
 	"github.com/palantir/pkg/bearertoken"
 	"github.com/palantir/pkg/rid"
+	"google.golang.org/protobuf/proto"
 )
+
+// nominalAPIClient is a lightweight HTTP client wrapper for sending protobuf requests to Nominal's API.
+type nominalAPIClient struct {
+	httpClient *http.Client
+	baseURL    string
+	authToken  bearertoken.Token
+}
+
+// newNominalAPIClient creates a new API client.
+func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken bearertoken.Token) *nominalAPIClient {
+	return &nominalAPIClient{
+		httpClient: httpClient,
+		baseURL:    baseURL,
+		authToken:  authToken,
+	}
+}
+
+// writeNominalData sends a WriteRequestNominal to the specified dataset.
+func (c *nominalAPIClient) writeNominalData(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, request *pb.WriteRequestNominal) error {
+	// Serialize to protobuf
+	data, err := proto.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal protobuf: %w", err)
+	}
+
+	// Construct URL
+	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", c.baseURL, datasetRID.String())
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Authorization", "Bearer "+string(c.authToken))
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
 
 type Client struct {
 	apiKey     string
