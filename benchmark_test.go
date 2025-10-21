@@ -9,6 +9,7 @@ package nominal_streaming
 // Results show sustained network throughput including HTTP serialization and sending.
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,7 +36,7 @@ func BenchmarkThroughput_Float(b *testing.B) {
 	}
 
 	// Use default settings
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		b.Fatalf("Failed to create stream: %v", err)
 	}
@@ -81,7 +82,7 @@ func BenchmarkThroughput_Int(b *testing.B) {
 		b.Fatalf("Failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		b.Fatalf("Failed to create stream: %v", err)
 	}
@@ -127,7 +128,7 @@ func BenchmarkThroughput_String(b *testing.B) {
 		b.Fatalf("Failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		b.Fatalf("Failed to create stream: %v", err)
 	}
@@ -173,7 +174,7 @@ func BenchmarkThroughput_Mixed(b *testing.B) {
 		b.Fatalf("Failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		b.Fatalf("Failed to create stream: %v", err)
 	}

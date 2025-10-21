@@ -81,6 +81,7 @@ type batcher struct {
 	closed   bool
 
 	// API client
+	ctx          context.Context
 	writerClient writerapi.NominalChannelWriterServiceClient
 	authToken    bearertoken.Token
 	datasetRID   rids.NominalDataSourceOrDatasetRid
@@ -93,6 +94,7 @@ type batcher struct {
 }
 
 func newBatcher(
+	ctx context.Context,
 	writerClient writerapi.NominalChannelWriterServiceClient,
 	authToken bearertoken.Token,
 	datasetRID rids.NominalDataSourceOrDatasetRid,
@@ -104,6 +106,7 @@ func newBatcher(
 		flushSize:     flushSize,
 		flushPeriod:   flushPeriod,
 		errors:        make(chan error, 100),
+		ctx:           ctx,
 		writerClient:  writerClient,
 		authToken:     authToken,
 		datasetRID:    datasetRID,
@@ -349,8 +352,7 @@ func (b *batcher) sendToNominal(batches []writerapi.RecordsBatchExternal) error 
 		DataSourceRid: b.datasetRID,
 	}
 
-	ctx := context.Background()
-	if err := b.writerClient.WriteBatches(ctx, b.authToken, request); err != nil {
+	if err := b.writerClient.WriteBatches(b.ctx, b.authToken, request); err != nil {
 		return fmt.Errorf("API call failed: %w", err)
 	}
 	return nil

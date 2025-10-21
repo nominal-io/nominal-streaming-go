@@ -1,6 +1,7 @@
 package nominal_streaming
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -76,7 +77,7 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 
 	// Create stream with short flush interval for quick testing
 	flushInterval := 20 * time.Millisecond
-	stream, err := client.NewStream(datasetRID, WithFlushInterval(flushInterval))
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID, WithFlushInterval(flushInterval))
 	if err != nil {
 		t.Fatalf("Failed to create stream: %v", err)
 	}

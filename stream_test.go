@@ -1,6 +1,7 @@
 package nominal_streaming
 
 import (
+	"context"
 	"testing"
 )
 
@@ -16,7 +17,7 @@ func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}

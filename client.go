@@ -1,6 +1,7 @@
 package nominal_streaming
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -57,9 +58,9 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) NewStream(datasetRID rids.NominalDataSourceOrDatasetRid, options ...DatasetStreamOption) (*DatasetStream, error) {
+func (c *Client) NewDatasetStream(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, options ...DatasetStreamOption) (*DatasetStream, error) {
 
-	batcher := newBatcher(c.writerClient, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
+	batcher := newBatcher(ctx, c.writerClient, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
 	batcher.start()
 
 	stream := &DatasetStream{

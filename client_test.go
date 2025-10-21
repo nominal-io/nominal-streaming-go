@@ -1,6 +1,7 @@
 package nominal_streaming
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -57,7 +58,7 @@ func TestNewStream(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestStream_EnqueueFloat(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -106,7 +107,7 @@ func TestStream_EnqueueString(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -132,7 +133,7 @@ func TestStream_BatchingBySizeThreshold(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -190,7 +191,7 @@ func TestStream_MixedDataTypes(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -229,7 +230,7 @@ func TestStream_DifferentTagSets(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -263,7 +264,7 @@ func TestStream_Close(t *testing.T) {
 		t.Fatalf("failed to parse dataset RID: %v", err)
 	}
 
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}

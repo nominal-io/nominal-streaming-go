@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"time"
@@ -32,7 +33,7 @@ func main() {
 	}
 
 	// Create a stream for a specific dataset
-	stream, err := client.NewStream(datasetRID)
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		log.Fatalf("Failed to create stream: %v", err)
 	}
