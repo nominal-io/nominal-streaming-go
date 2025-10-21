@@ -4,13 +4,13 @@ import (
 	"log"
 	"time"
 
-	nominal "github.com/nominal-io/nominal-streaming"
+	nominal_streaming "github.com/nominal-io/nominal-streaming"
 )
 
 func main() {
 	// Create a new client
-	client, err := nominal.NewClient(
-		nominal.WithAPIKey("demo-key"),
+	client, err := nominal_streaming.NewClient(
+		nominal_streaming.WithAPIKey("demo-key"),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
@@ -36,35 +36,33 @@ func main() {
 	baseTime := time.Now().UnixNano()
 
 	// Create channel streams for different channel + tag combinations
-	tempNorthCS := stream.FloatStream("temperature", nominal.Tags{
+	tempNorthCS := stream.FloatStream("temperature", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"sensor":   "A1",
 		"location": "north",
 		"unit":     "celsius",
-	})
+	}))
 
-	tempSouthCS := stream.FloatStream("temperature", nominal.Tags{
+	tempSouthCS := stream.FloatStream("temperature", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"sensor":   "A2",
 		"location": "south",
 		"unit":     "celsius",
-	})
+	}))
 
-	pressureCS := stream.FloatStream("pressure", nominal.Tags{
+	pressureCS := stream.FloatStream("pressure", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"sensor": "P1",
 		"unit":   "kPa",
-	})
+	}))
 
-	countCS := stream.IntStream("event_count", nominal.Tags{
+	countCS := stream.IntStream("event_count", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"device": "counter_1",
-	})
+	}))
 
-	statusCS := stream.StringStream("system_status", nominal.Tags{
-		"device": "controller_1",
-		"system": "main",
-	})
+	// Example without tags - simple channel reference
+	statusCS := stream.StringStream("system_status")
 
-	modeCS := stream.StringStream("device_mode", nominal.Tags{
+	modeCS := stream.StringStream("device_mode", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"device": "pump_1",
-	})
+	}))
 
 	// Example 1: Send float data points for temperature sensors
 	log.Println("Sending temperature data from multiple sensors...")

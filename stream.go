@@ -1,4 +1,4 @@
-package nominal
+package nominal_streaming
 
 import (
 	"sync"
@@ -31,13 +31,40 @@ func WithFlushInterval(interval time.Duration) DatasetStreamOption {
 	}
 }
 
-func (s *DatasetStream) FloatStream(ch string, tags Tags) *ChannelStream[float64] {
+// ChannelOption is an option for configuring a channel stream.
+type ChannelOption interface {
+	apply(*channelConfig)
+}
+
+type channelConfig struct {
+	tags map[string]string
+}
+
+type tagsOption struct {
+	tags Tags
+}
+
+func (o tagsOption) apply(cfg *channelConfig) {
+	cfg.tags = o.tags
+}
+
+// WithTags sets tags for a channel stream.
+func WithTags(tags Tags) ChannelOption {
+	return tagsOption{tags: tags}
+}
+
+func (s *DatasetStream) FloatStream(ch string, opts ...ChannelOption) *ChannelStream[float64] {
+	cfg := &channelConfig{tags: map[string]string{}}
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := channelReferenceKey{
 		channel:  channelName(ch),
-		tagsHash: hashTags(tags),
+		tagsHash: hashTags(cfg.tags),
 	}
 
 	if stream, exists := s.floatStreams[key]; exists {
@@ -46,7 +73,7 @@ func (s *DatasetStream) FloatStream(ch string, tags Tags) *ChannelStream[float64
 
 	ref := channelReference{
 		channelReferenceKey: key,
-		tags:                tags,
+		tags:                cfg.tags,
 	}
 	stream := &ChannelStream[float64]{
 		batcher: s.batcher,
@@ -59,13 +86,18 @@ func (s *DatasetStream) FloatStream(ch string, tags Tags) *ChannelStream[float64
 	return stream
 }
 
-func (s *DatasetStream) IntStream(ch string, tags Tags) *ChannelStream[int64] {
+func (s *DatasetStream) IntStream(ch string, opts ...ChannelOption) *ChannelStream[int64] {
+	cfg := &channelConfig{tags: map[string]string{}}
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := channelReferenceKey{
 		channel:  channelName(ch),
-		tagsHash: hashTags(tags),
+		tagsHash: hashTags(cfg.tags),
 	}
 
 	if stream, exists := s.intStreams[key]; exists {
@@ -74,7 +106,7 @@ func (s *DatasetStream) IntStream(ch string, tags Tags) *ChannelStream[int64] {
 
 	ref := channelReference{
 		channelReferenceKey: key,
-		tags:                tags,
+		tags:                cfg.tags,
 	}
 	stream := &ChannelStream[int64]{
 		batcher: s.batcher,
@@ -87,13 +119,18 @@ func (s *DatasetStream) IntStream(ch string, tags Tags) *ChannelStream[int64] {
 	return stream
 }
 
-func (s *DatasetStream) StringStream(ch string, tags Tags) *ChannelStream[string] {
+func (s *DatasetStream) StringStream(ch string, opts ...ChannelOption) *ChannelStream[string] {
+	cfg := &channelConfig{tags: map[string]string{}}
+	for _, opt := range opts {
+		opt.apply(cfg)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	key := channelReferenceKey{
 		channel:  channelName(ch),
-		tagsHash: hashTags(tags),
+		tagsHash: hashTags(cfg.tags),
 	}
 
 	if stream, exists := s.stringStreams[key]; exists {
@@ -102,7 +139,7 @@ func (s *DatasetStream) StringStream(ch string, tags Tags) *ChannelStream[string
 
 	ref := channelReference{
 		channelReferenceKey: key,
-		tags:                tags,
+		tags:                cfg.tags,
 	}
 	stream := &ChannelStream[string]{
 		batcher: s.batcher,

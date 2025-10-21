@@ -1,4 +1,4 @@
-package nominal
+package nominal_streaming
 
 import (
 	"fmt"

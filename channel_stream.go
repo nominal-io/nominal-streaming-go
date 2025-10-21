@@ -1,4 +1,4 @@
-package nominal
+package nominal_streaming
 
 type ChannelStream[T Value] struct {
 	batcher *batcher

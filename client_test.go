@@ -1,4 +1,4 @@
-package nominal
+package nominal_streaming
 
 import (
 	"testing"
@@ -80,7 +80,7 @@ func TestStream_EnqueueFloat(t *testing.T) {
 	defer stream.Close()
 
 	// Create a float channel stream and enqueue a data point
-	cs := stream.FloatStream("temperature", Tags{"sensor": "A1"})
+	cs := stream.FloatStream("temperature", WithTags(Tags{"sensor": "A1"}))
 	cs.Enqueue(time.Now().UnixNano(), 23.5)
 
 	// Give it a moment to process
@@ -101,7 +101,7 @@ func TestStream_EnqueueString(t *testing.T) {
 	defer stream.Close()
 
 	// Create a string channel stream and enqueue a data point
-	cs := stream.StringStream("status", Tags{"device": "D1"})
+	cs := stream.StringStream("status", WithTags(Tags{"device": "D1"}))
 	cs.Enqueue(time.Now().UnixNano(), "OK")
 
 	// Give it a moment to process
@@ -122,7 +122,7 @@ func TestStream_BatchingBySizeThreshold(t *testing.T) {
 	defer stream.Close()
 
 	// Create a channel stream and send multiple data points to trigger size-based flush (default is 1000)
-	cs := stream.FloatStream("test_channel", Tags{"batch": "size_test"})
+	cs := stream.FloatStream("test_channel", WithTags(Tags{"batch": "size_test"}))
 	baseTime := time.Now().UnixNano()
 	for i := 0; i < 1005; i++ {
 		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
@@ -146,7 +146,7 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 	defer stream.Close()
 
 	// Create a channel stream and send a few data points
-	cs := stream.FloatStream("test_channel", Tags{"batch": "time_test"})
+	cs := stream.FloatStream("test_channel", WithTags(Tags{"batch": "time_test"}))
 	baseTime := time.Now().UnixNano()
 	for i := 0; i < 10; i++ {
 		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
@@ -172,8 +172,8 @@ func TestStream_MixedDataTypes(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	// Create channel streams for different channels with specific types
-	tempCS := stream.FloatStream("temperature", Tags{"sensor": "A1"})
-	statusCS := stream.StringStream("status", Tags{"device": "D1"})
+	tempCS := stream.FloatStream("temperature", WithTags(Tags{"sensor": "A1"}))
+	statusCS := stream.StringStream("status", WithTags(Tags{"device": "D1"}))
 
 	// Send float data points
 	for i := 0; i < 5; i++ {
@@ -206,8 +206,8 @@ func TestStream_DifferentTagSets(t *testing.T) {
 	baseTime := time.Now().UnixNano()
 
 	// Create channel streams with different tag sets (should create separate batches)
-	csNorth := stream.FloatStream("temperature", Tags{"sensor": "A1", "location": "north"})
-	csSouth := stream.FloatStream("temperature", Tags{"sensor": "A2", "location": "south"})
+	csNorth := stream.FloatStream("temperature", WithTags(Tags{"sensor": "A1", "location": "north"}))
+	csSouth := stream.FloatStream("temperature", WithTags(Tags{"sensor": "A2", "location": "south"}))
 
 	// Send data points with different tag sets
 	for i := 0; i < 5; i++ {
@@ -232,7 +232,7 @@ func TestStream_Close(t *testing.T) {
 	}
 
 	// Send some data
-	cs := stream.FloatStream("test", Tags{"test": "close"})
+	cs := stream.FloatStream("test", WithTags(Tags{"test": "close"}))
 	cs.Enqueue(time.Now().UnixNano(), 42.0)
 
 	// Close should flush remaining data
