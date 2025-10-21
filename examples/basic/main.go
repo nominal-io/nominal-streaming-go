@@ -129,11 +129,6 @@ func main() {
 	// Wait for the time-based flush to occur
 	time.Sleep(6 * time.Second)
 
-	// Check if any errors were dropped
-	if dropped := stream.DroppedErrorCount(); dropped > 0 {
-		log.Printf("⚠️  Warning: %d errors were dropped due to buffer overflow", dropped)
-	}
-
 	log.Println()
 	log.Println("Demo complete. Stream will flush remaining data on close.")
 }

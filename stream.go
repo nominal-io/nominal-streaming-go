@@ -136,10 +136,6 @@ func (s *DatasetStream) Errors() <-chan error {
 	return s.batcher.errors
 }
 
-func (s *DatasetStream) DroppedErrorCount() int64 {
-	return s.batcher.droppedErrors.Load()
-}
-
 // ProcessErrors launches a goroutine to handle async errors until the stream closes.
 func (s *DatasetStream) ProcessErrors(handler func(error)) {
 	go func() {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -76,9 +77,8 @@ type batcher struct {
 	flushPeriod time.Duration
 
 	// Error handling
-	errors        chan error
-	droppedErrors atomic.Int64
-	closed        atomic.Bool
+	errors chan error
+	closed atomic.Bool
 
 	// API client
 	writerClient writerapi.NominalChannelWriterServiceClient
@@ -128,7 +128,8 @@ func (b *batcher) close() error {
 
 // reportError sends an error to the errors channel without blocking.
 // If the channel is full, it attempts to drop the oldest error to make room for the new one.
-// Dropped errors are counted and can be retrieved via DroppedErrorCount().
+// Dropped errors are logged as warnings.
+// The closed flag prevents sending on a closed channel (flush goroutines may outlive run()).
 func (b *batcher) reportError(err error) {
 	if b.closed.Load() {
 		return
@@ -143,8 +144,8 @@ func (b *batcher) reportError(err error) {
 
 	// Channel is full - try to drop oldest error to make room
 	select {
-	case <-b.errors:
-		b.droppedErrors.Add(1)
+	case oldErr := <-b.errors:
+		log.Printf("nominal-streaming: dropped error (buffer full): %v", oldErr)
 	default:
 	}
 
@@ -153,7 +154,7 @@ func (b *batcher) reportError(err error) {
 	case b.errors <- err:
 		return // Success
 	default:
-		b.droppedErrors.Add(1)
+		log.Printf("nominal-streaming: dropped error (buffer full): %v", err)
 	}
 }
 
