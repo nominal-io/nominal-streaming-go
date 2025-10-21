@@ -36,3 +36,7 @@ check: fmt lint test
 
 # Build and run example
 run: build example
+
+# Run throughput benchmarks
+benchmark:
+    go test -bench=Throughput -benchmem -benchtime=5s -timeout=60s

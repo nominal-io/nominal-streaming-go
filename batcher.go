@@ -7,7 +7,6 @@ import (
 	"log"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/nominal-io/nominal-api-go/api/rids"
@@ -77,8 +76,9 @@ type batcher struct {
 	flushPeriod time.Duration
 
 	// Error handling
-	errors chan error
-	closed atomic.Bool
+	errorsMu sync.Mutex // Protects errors channel and closed flag
+	errors   chan error
+	closed   bool
 
 	// API client
 	writerClient writerapi.NominalChannelWriterServiceClient
@@ -119,23 +119,40 @@ func (b *batcher) start() {
 }
 
 func (b *batcher) close() error {
-	b.closed.Store(true)
+	// Check if already closed
+	b.errorsMu.Lock()
+	if b.closed {
+		b.errorsMu.Unlock()
+		return nil
+	}
+	b.closed = true
+	b.errorsMu.Unlock()
+
+	// Signal shutdown and wait for all goroutines to finish
 	close(b.closeChan)
 	b.wg.Wait()
+
+	// Close the errors channel
+	b.errorsMu.Lock()
 	close(b.errors)
+	b.errorsMu.Unlock()
+
 	return nil
 }
 
 // reportError sends an error to the errors channel without blocking.
 // If the channel is full, it attempts to drop the oldest error to make room for the new one.
 // Dropped errors are logged as warnings.
-// The closed flag prevents sending on a closed channel (flush goroutines may outlive run()).
+// The errorsMu mutex prevents sending on a closed channel (flush goroutines may outlive run()).
 func (b *batcher) reportError(err error) {
-	if b.closed.Load() {
+	b.errorsMu.Lock()
+	defer b.errorsMu.Unlock()
+
+	if b.closed {
 		return
 	}
 
-	// Try to send error
+	// Try to send error (non-blocking)
 	select {
 	case b.errors <- err:
 		return // Success
@@ -301,10 +318,12 @@ func (b *batcher) flushLocked() {
 
 	b.totalPoints = 0
 
+	b.wg.Add(1)
 	go b.sendBatches(floatBatches, intBatches, stringBatches)
 }
 
 func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch) {
+	defer b.wg.Done()
 	recordsBatches := make([]writerapi.RecordsBatchExternal, 0, len(floatBatches)+len(intBatches)+len(stringBatches))
 
 	for _, batch := range floatBatches {
@@ -334,7 +353,6 @@ func (b *batcher) sendToNominal(batches []writerapi.RecordsBatchExternal) error 
 	if err := b.writerClient.WriteBatches(ctx, b.authToken, request); err != nil {
 		return fmt.Errorf("API call failed: %w", err)
 	}
-
 	return nil
 }
 

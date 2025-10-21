@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"time"
 
@@ -8,15 +9,24 @@ import (
 )
 
 func main() {
+	// Parse command line flags
+	token := flag.String("token", "", "Nominal API token (required)")
+	ridStr := flag.String("rid", "", "Dataset RID (required)")
+	flag.Parse()
+
+	if *token == "" || *ridStr == "" {
+		log.Fatal("Usage: go run main.go -token=<token> -rid=<dataset-rid>")
+	}
+
 	// Create a new client
-	client, err := nominal_streaming.NewClient("demo-key")
+	client, err := nominal_streaming.NewClient(*token)
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
 	// Parse the dataset RID
-	datasetRID, err := nominal_streaming.ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
+	datasetRID, err := nominal_streaming.ParseDatasetRID(*ridStr)
 	if err != nil {
 		log.Fatalf("Failed to parse dataset RID: %v", err)
 	}
@@ -30,11 +40,10 @@ func main() {
 
 	// Optional: Process errors asynchronously
 	stream.ProcessErrors(func(err error) {
-		log.Printf("❌ Batch send error: %v", err)
+		log.Printf("error sending batch to Nominal: %v", err)
 	})
 
 	log.Println("Starting data streaming demo...")
-	log.Println("Batches will flush after 1000 points OR 5 seconds, whichever comes first")
 	log.Println()
 
 	baseTime := time.Now().UnixNano()
@@ -52,39 +61,30 @@ func main() {
 		"unit":     "celsius",
 	}))
 
-	pressureCS := stream.FloatStream("pressure", nominal_streaming.WithTags(nominal_streaming.Tags{
-		"sensor": "P1",
-		"unit":   "kPa",
-	}))
+	pressureCS := stream.FloatStream("pressure")
 
 	countCS := stream.IntStream("event_count", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"device": "counter_1",
 	}))
 
-	// Example without tags - simple channel reference
 	statusCS := stream.StringStream("system_status")
 
 	modeCS := stream.StringStream("device_mode", nominal_streaming.WithTags(nominal_streaming.Tags{
 		"device": "pump_1",
 	}))
 
-	// Example 1: Send float data points for temperature sensors
 	log.Println("Sending temperature data from multiple sensors...")
 	for i := 0; i < 15; i++ {
-		// Sensor A1 in North location
 		tempNorthCS.Enqueue(
 			baseTime+int64(i*1_000_000_000),
 			20.0+float64(i)*0.5,
 		)
-
-		// Sensor A2 in South location
 		tempSouthCS.Enqueue(
 			baseTime+int64(i*1_000_000_000),
 			25.0+float64(i)*0.3,
 		)
 	}
 
-	// Example 2: Send float data points for pressure
 	log.Println("Sending pressure data...")
 	for i := 0; i < 10; i++ {
 		pressureCS.Enqueue(
@@ -93,7 +93,6 @@ func main() {
 		)
 	}
 
-	// Example 3: Send int64 data points for event counts
 	log.Println("Sending event count data...")
 	for i := 0; i < 8; i++ {
 		countCS.Enqueue(
@@ -102,7 +101,6 @@ func main() {
 		)
 	}
 
-	// Example 4: Send string data points for status
 	log.Println("Sending status data...")
 	statuses := []string{"OK", "OK", "WARNING", "OK", "ERROR", "OK", "OK", "WARNING", "OK", "OK"}
 	for i, status := range statuses {
@@ -112,7 +110,6 @@ func main() {
 		)
 	}
 
-	// Example 5: Send string data points for another device
 	log.Println("Sending device mode data...")
 	modes := []string{"IDLE", "ACTIVE", "ACTIVE", "ACTIVE", "IDLE"}
 	for i, mode := range modes {
@@ -123,11 +120,10 @@ func main() {
 	}
 
 	log.Println()
-	log.Println("Data sent. Waiting for time-based flush (5 seconds)...")
+	log.Println("Data sent. Waiting for time-based flush...")
 	log.Println()
 
-	// Wait for the time-based flush to occur
-	time.Sleep(6 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	log.Println()
 	log.Println("Demo complete. Stream will flush remaining data on close.")
