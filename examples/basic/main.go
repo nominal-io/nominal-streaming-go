@@ -9,16 +9,20 @@ import (
 
 func main() {
 	// Create a new client
-	client, err := nominal_streaming.NewClient(
-		nominal_streaming.WithAPIKey("demo-key"),
-	)
+	client, err := nominal_streaming.NewClient("demo-key")
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
 	defer client.Close()
 
+	// Parse the dataset RID
+	datasetRID, err := nominal_streaming.ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
+	if err != nil {
+		log.Fatalf("Failed to parse dataset RID: %v", err)
+	}
+
 	// Create a stream for a specific dataset
-	stream, err := client.NewStream("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		log.Fatalf("Failed to create stream: %v", err)
 	}

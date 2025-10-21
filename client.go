@@ -3,34 +3,63 @@ package nominal_streaming
 import (
 	"fmt"
 	"time"
+
+	"github.com/nominal-io/nominal-api-go/api/rids"
+	writerapi "github.com/nominal-io/nominal-api-go/storage/writer/api"
+	"github.com/palantir/conjure-go-runtime/v2/conjure-go-client/httpclient"
+	"github.com/palantir/pkg/bearertoken"
+	"github.com/palantir/pkg/rid"
 )
 
 type Client struct {
-	apiKey  string
-	baseURL string
+	apiKey       string
+	baseURL      string
+	writerClient writerapi.NominalChannelWriterServiceClient
+	authToken    bearertoken.Token
 }
 
-func NewClient(opts ...Option) (*Client, error) {
+// Option is a function that configures a Client.
+type Option func(*Client) error
+
+// WithBaseURL sets a custom base URL for the API.
+func WithBaseURL(baseURL string) Option {
+	return func(c *Client) error {
+		if baseURL == "" {
+			return fmt.Errorf("base URL cannot be empty")
+		}
+		c.baseURL = baseURL
+		return nil
+	}
+}
+
+func NewClient(apiKey string, options ...Option) (*Client, error) {
 	client := &Client{
+		apiKey:  apiKey,
 		baseURL: "https://api.gov.nominal.io/api",
 	}
 
-	for _, opt := range opts {
-		if err := opt(client); err != nil {
+	for _, option := range options {
+		if err := option(client); err != nil {
 			return nil, fmt.Errorf("failed to apply option: %w", err)
 		}
 	}
 
-	if client.apiKey == "" {
-		return nil, ErrMissingAPIKey
+	httpClient, err := httpclient.NewClient(
+		httpclient.WithBaseURLs([]string{client.baseURL}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
 	}
+
+	client.writerClient = writerapi.NewNominalChannelWriterServiceClient(httpClient)
+	client.authToken = bearertoken.Token(client.apiKey)
 
 	return client, nil
 }
 
-func (c *Client) NewStream(datasetRID string, opts ...DatasetStreamOption) (*DatasetStream, error) {
+func (c *Client) NewStream(datasetRID rids.NominalDataSourceOrDatasetRid, options ...DatasetStreamOption) (*DatasetStream, error) {
 
-	batcher := newBatcher(c.apiKey, c.baseURL, datasetRID, 65_536, 500*time.Millisecond)
+	batcher := newBatcher(c.writerClient, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
 	batcher.start()
 
 	stream := &DatasetStream{
@@ -41,8 +70,8 @@ func (c *Client) NewStream(datasetRID string, opts ...DatasetStreamOption) (*Dat
 		stringStreams: make(map[channelReferenceKey]*ChannelStream[string]),
 	}
 
-	for _, opt := range opts {
-		if err := opt(stream); err != nil {
+	for _, option := range options {
+		if err := option(stream); err != nil {
 			return nil, fmt.Errorf("failed to apply stream option: %w", err)
 		}
 	}
@@ -52,4 +81,14 @@ func (c *Client) NewStream(datasetRID string, opts ...DatasetStreamOption) (*Dat
 
 func (c *Client) Close() error {
 	return nil
+}
+
+// ParseDatasetRID parses a dataset RID string into a typed RID.
+// Returns an error if the RID string is invalid.
+func ParseDatasetRID(ridString string) (rids.NominalDataSourceOrDatasetRid, error) {
+	parsedRID, err := rid.ParseRID(ridString)
+	if err != nil {
+		return rids.NominalDataSourceOrDatasetRid{}, fmt.Errorf("invalid dataset RID %q: %w", ridString, err)
+	}
+	return rids.NominalDataSourceOrDatasetRid(parsedRID), nil
 }

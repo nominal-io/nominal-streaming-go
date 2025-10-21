@@ -8,23 +8,20 @@ import (
 func TestNewClient(t *testing.T) {
 	tests := []struct {
 		name    string
+		apiKey  string
 		opts    []Option
 		wantErr bool
 	}{
 		{
 			name:    "valid client with API key",
-			opts:    []Option{WithAPIKey("test-key")},
+			apiKey:  "test-key",
+			opts:    []Option{},
 			wantErr: false,
 		},
 		{
-			name:    "missing API key",
-			opts:    []Option{},
-			wantErr: true,
-		},
-		{
-			name: "with custom base URL",
+			name:   "with custom base URL",
+			apiKey: "test-key",
 			opts: []Option{
-				WithAPIKey("test-key"),
 				WithBaseURL("https://custom.api.com"),
 			},
 			wantErr: false,
@@ -33,7 +30,7 @@ func TestNewClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client, err := NewClient(tt.opts...)
+			client, err := NewClient(tt.apiKey, tt.opts...)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewClient() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -49,13 +46,18 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewStream(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test-dataset")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test-dataset")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -67,13 +69,18 @@ func TestNewStream(t *testing.T) {
 }
 
 func TestStream_EnqueueFloat(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -88,13 +95,18 @@ func TestStream_EnqueueFloat(t *testing.T) {
 }
 
 func TestStream_EnqueueString(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -109,13 +121,18 @@ func TestStream_EnqueueString(t *testing.T) {
 }
 
 func TestStream_BatchingBySizeThreshold(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -133,13 +150,18 @@ func TestStream_BatchingBySizeThreshold(t *testing.T) {
 }
 
 func TestStream_BatchingByTimeThreshold(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -157,13 +179,18 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 }
 
 func TestStream_MixedDataTypes(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -191,13 +218,18 @@ func TestStream_MixedDataTypes(t *testing.T) {
 }
 
 func TestStream_DifferentTagSets(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -220,13 +252,18 @@ func TestStream_DifferentTagSets(t *testing.T) {
 }
 
 func TestStream_Close(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}

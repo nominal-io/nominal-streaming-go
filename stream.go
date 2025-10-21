@@ -3,10 +3,12 @@ package nominal_streaming
 import (
 	"sync"
 	"time"
+
+	"github.com/nominal-io/nominal-api-go/api/rids"
 )
 
 type DatasetStream struct {
-	datasetRID string
+	datasetRID rids.NominalDataSourceOrDatasetRid
 	batcher    *batcher
 
 	mu            sync.Mutex
@@ -31,50 +33,48 @@ func WithFlushInterval(interval time.Duration) DatasetStreamOption {
 	}
 }
 
-// ChannelOption is an option for configuring a channel stream.
-type ChannelOption interface {
-	apply(*channelConfig)
-}
+// ChannelOption is a function that configures a channel stream.
+type ChannelOption func(*channelConfig)
 
 type channelConfig struct {
 	tags map[string]string
 }
 
-type tagsOption struct {
-	tags Tags
-}
-
-func (o tagsOption) apply(cfg *channelConfig) {
-	cfg.tags = o.tags
-}
-
 // WithTags sets tags for a channel stream.
 func WithTags(tags Tags) ChannelOption {
-	return tagsOption{tags: tags}
+	return func(cfg *channelConfig) {
+		cfg.tags = tags
+	}
 }
 
-func (s *DatasetStream) FloatStream(ch string, opts ...ChannelOption) *ChannelStream[float64] {
+// buildChannelReference processes options and creates a channel reference with key.
+func buildChannelReference(ch string, options []ChannelOption) channelReference {
 	cfg := &channelConfig{tags: map[string]string{}}
-	for _, opt := range opts {
-		opt.apply(cfg)
+	for _, option := range options {
+		option(cfg)
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	key := channelReferenceKey{
 		channel:  channelName(ch),
 		tagsHash: hashTags(cfg.tags),
 	}
 
-	if stream, exists := s.floatStreams[key]; exists {
-		return stream
-	}
-
-	ref := channelReference{
+	return channelReference{
 		channelReferenceKey: key,
 		tags:                cfg.tags,
 	}
+}
+
+func (s *DatasetStream) FloatStream(ch string, options ...ChannelOption) *ChannelStream[float64] {
+	ref := buildChannelReference(ch, options)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if stream, exists := s.floatStreams[ref.channelReferenceKey]; exists {
+		return stream
+	}
+
 	stream := &ChannelStream[float64]{
 		batcher: s.batcher,
 		ref:     ref,
@@ -82,32 +82,20 @@ func (s *DatasetStream) FloatStream(ch string, opts ...ChannelOption) *ChannelSt
 			s.batcher.addFloat(ref, ts, v)
 		},
 	}
-	s.floatStreams[key] = stream
+	s.floatStreams[ref.channelReferenceKey] = stream
 	return stream
 }
 
-func (s *DatasetStream) IntStream(ch string, opts ...ChannelOption) *ChannelStream[int64] {
-	cfg := &channelConfig{tags: map[string]string{}}
-	for _, opt := range opts {
-		opt.apply(cfg)
-	}
+func (s *DatasetStream) IntStream(ch string, options ...ChannelOption) *ChannelStream[int64] {
+	ref := buildChannelReference(ch, options)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := channelReferenceKey{
-		channel:  channelName(ch),
-		tagsHash: hashTags(cfg.tags),
-	}
-
-	if stream, exists := s.intStreams[key]; exists {
+	if stream, exists := s.intStreams[ref.channelReferenceKey]; exists {
 		return stream
 	}
 
-	ref := channelReference{
-		channelReferenceKey: key,
-		tags:                cfg.tags,
-	}
 	stream := &ChannelStream[int64]{
 		batcher: s.batcher,
 		ref:     ref,
@@ -115,32 +103,20 @@ func (s *DatasetStream) IntStream(ch string, opts ...ChannelOption) *ChannelStre
 			s.batcher.addInt(ref, ts, v)
 		},
 	}
-	s.intStreams[key] = stream
+	s.intStreams[ref.channelReferenceKey] = stream
 	return stream
 }
 
-func (s *DatasetStream) StringStream(ch string, opts ...ChannelOption) *ChannelStream[string] {
-	cfg := &channelConfig{tags: map[string]string{}}
-	for _, opt := range opts {
-		opt.apply(cfg)
-	}
+func (s *DatasetStream) StringStream(ch string, options ...ChannelOption) *ChannelStream[string] {
+	ref := buildChannelReference(ch, options)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key := channelReferenceKey{
-		channel:  channelName(ch),
-		tagsHash: hashTags(cfg.tags),
-	}
-
-	if stream, exists := s.stringStreams[key]; exists {
+	if stream, exists := s.stringStreams[ref.channelReferenceKey]; exists {
 		return stream
 	}
 
-	ref := channelReference{
-		channelReferenceKey: key,
-		tags:                cfg.tags,
-	}
 	stream := &ChannelStream[string]{
 		batcher: s.batcher,
 		ref:     ref,
@@ -148,7 +124,7 @@ func (s *DatasetStream) StringStream(ch string, opts ...ChannelOption) *ChannelS
 			s.batcher.addString(ref, ts, v)
 		},
 	}
-	s.stringStreams[key] = stream
+	s.stringStreams[ref.channelReferenceKey] = stream
 	return stream
 }
 

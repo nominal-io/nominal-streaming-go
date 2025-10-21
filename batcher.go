@@ -12,9 +12,7 @@ import (
 	"github.com/nominal-io/nominal-api-go/api/rids"
 	nominalapi "github.com/nominal-io/nominal-api-go/io/nominal/api"
 	writerapi "github.com/nominal-io/nominal-api-go/storage/writer/api"
-	"github.com/palantir/conjure-go-runtime/v2/conjure-go-client/httpclient"
 	"github.com/palantir/pkg/bearertoken"
-	"github.com/palantir/pkg/rid"
 	"github.com/palantir/pkg/safelong"
 )
 
@@ -94,29 +92,21 @@ type batcher struct {
 	totalPoints   int
 }
 
-func newBatcher(apiKey, baseURL, datasetRID string, flushSize int, flushPeriod time.Duration) *batcher {
-	httpClient, err := httpclient.NewClient(
-		httpclient.WithBaseURLs([]string{baseURL}),
-	)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create HTTP client: %v", err))
-	}
-
-	writerClient := writerapi.NewNominalChannelWriterServiceClient(httpClient)
-
-	parsedRID, err := rid.ParseRID(datasetRID)
-	if err != nil {
-		panic(fmt.Sprintf("invalid dataset RID %q: %v", datasetRID, err))
-	}
-
+func newBatcher(
+	writerClient writerapi.NominalChannelWriterServiceClient,
+	authToken bearertoken.Token,
+	datasetRID rids.NominalDataSourceOrDatasetRid,
+	flushSize int,
+	flushPeriod time.Duration,
+) *batcher {
 	return &batcher{
 		closeChan:     make(chan struct{}),
 		flushSize:     flushSize,
 		flushPeriod:   flushPeriod,
 		errors:        make(chan error, 100),
 		writerClient:  writerClient,
-		authToken:     bearertoken.Token(apiKey),
-		datasetRID:    rids.NominalDataSourceOrDatasetRid(parsedRID),
+		authToken:     authToken,
+		datasetRID:    datasetRID,
 		floatBuffers:  make(map[channelReferenceKey]*floatBuffer),
 		intBuffers:    make(map[channelReferenceKey]*intBuffer),
 		stringBuffers: make(map[channelReferenceKey]*stringBuffer),
@@ -136,24 +126,34 @@ func (b *batcher) close() error {
 	return nil
 }
 
+// reportError sends an error to the errors channel without blocking.
+// If the channel is full, it attempts to drop the oldest error to make room for the new one.
+// Dropped errors are counted and can be retrieved via DroppedErrorCount().
 func (b *batcher) reportError(err error) {
 	if b.closed.Load() {
 		return
 	}
 
+	// Try to send error
 	select {
 	case b.errors <- err:
+		return // Success
 	default:
-		select {
-		case <-b.errors:
-			b.droppedErrors.Add(1)
-		default:
-		}
-		select {
-		case b.errors <- err:
-		default:
-			b.droppedErrors.Add(1)
-		}
+	}
+
+	// Channel is full - try to drop oldest error to make room
+	select {
+	case <-b.errors:
+		b.droppedErrors.Add(1)
+	default:
+	}
+
+	// Try to send new error again
+	select {
+	case b.errors <- err:
+		return // Success
+	default:
+		b.droppedErrors.Add(1)
 	}
 }
 
@@ -318,12 +318,12 @@ func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, 
 		recordsBatches = append(recordsBatches, convertStringBatch(batch))
 	}
 
-	if err := b.postToAPI(recordsBatches); err != nil {
+	if err := b.sendToNominal(recordsBatches); err != nil {
 		b.reportError(fmt.Errorf("failed to send batch: %w", err))
 	}
 }
 
-func (b *batcher) postToAPI(batches []writerapi.RecordsBatchExternal) error {
+func (b *batcher) sendToNominal(batches []writerapi.RecordsBatchExternal) error {
 	request := writerapi.WriteBatchesRequestExternal{
 		Batches:       batches,
 		DataSourceRid: b.datasetRID,

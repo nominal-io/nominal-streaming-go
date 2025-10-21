@@ -5,13 +5,18 @@ import (
 )
 
 func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
-	client, err := NewClient(WithAPIKey("test-key"))
+	client, err := NewClient("test-key")
 	if err != nil {
 		t.Fatalf("failed to create client: %v", err)
 	}
 	defer client.Close()
 
-	stream, err := client.NewStream("ri.nominal.main.dataset.test")
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewStream(datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
