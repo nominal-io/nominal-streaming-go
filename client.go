@@ -3,20 +3,19 @@ package nominal_streaming
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/nominal-io/nominal-api-go/api/rids"
-	writerapi "github.com/nominal-io/nominal-api-go/storage/writer/api"
-	"github.com/palantir/conjure-go-runtime/v2/conjure-go-client/httpclient"
 	"github.com/palantir/pkg/bearertoken"
 	"github.com/palantir/pkg/rid"
 )
 
 type Client struct {
-	apiKey       string
-	baseURL      string
-	writerClient writerapi.NominalChannelWriterServiceClient
-	authToken    bearertoken.Token
+	apiKey     string
+	baseURL    string
+	httpClient *http.Client
+	authToken  bearertoken.Token
 }
 
 // Option is a function that configures a Client.
@@ -35,8 +34,10 @@ func WithBaseURL(baseURL string) Option {
 
 func NewClient(apiKey string, options ...Option) (*Client, error) {
 	client := &Client{
-		apiKey:  apiKey,
-		baseURL: "https://api.gov.nominal.io/api",
+		apiKey:     apiKey,
+		baseURL:    "https://api.gov.nominal.io/api",
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		authToken:  bearertoken.Token(apiKey),
 	}
 
 	for _, option := range options {
@@ -45,22 +46,12 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 		}
 	}
 
-	httpClient, err := httpclient.NewClient(
-		httpclient.WithBaseURLs([]string{client.baseURL}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
-	}
-
-	client.writerClient = writerapi.NewNominalChannelWriterServiceClient(httpClient)
-	client.authToken = bearertoken.Token(client.apiKey)
-
 	return client, nil
 }
 
 func (c *Client) NewDatasetStream(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, options ...DatasetStreamOption) (*DatasetStream, error) {
 
-	batcher := newBatcher(ctx, c.writerClient, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
+	batcher := newBatcher(ctx, c.httpClient, c.baseURL, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
 	batcher.start()
 
 	stream := &DatasetStream{

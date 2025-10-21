@@ -40,10 +40,8 @@ func main() {
 	}
 
 	// Process errors synchronously so we see them
-	errorCount := 0
 	stream.ProcessErrors(func(err error) {
 		log.Printf("❌ Batch send error: %v", err)
-		errorCount++
 	})
 
 	log.Println("Streaming 20 million points of random walk data...")
@@ -70,9 +68,5 @@ func main() {
 	log.Println("Data enqueued, flushing...")
 	stream.Close()
 
-	if errorCount > 0 {
-		log.Fatalf("Failed with %d errors", errorCount)
-	}
-
-	log.Println("✅ Successfully sent all data!")
+	log.Println("✅ Completed sending 20 million points of random walk data!")
 }

@@ -27,6 +27,14 @@ deps:
     go mod download
     go mod tidy
 
+# Install development tools
+install:
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+
+# Generate Go code from proto files
+gen-proto:
+    protoc --go_out=. --go_opt=paths=source_relative proto/nominal_write.proto
+
 # Run example
 example:
     go run examples/basic/main.go

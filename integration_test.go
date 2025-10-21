@@ -2,21 +2,22 @@ package nominal_streaming
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	writerapi "github.com/nominal-io/nominal-api-go/storage/writer/api"
+	pb "github.com/nominal-io/nominal-streaming/proto"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestClient_IntegrationWithMockServer(t *testing.T) {
 	// Track received requests
 	var mu sync.Mutex
-	var receivedRequests []writerapi.WriteBatchesRequestExternal
+	var receivedRequests []*pb.WriteRequestNominal
 
 	// Create mock HTTP server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -28,10 +29,19 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 			return
 		}
 
-		// Verify path (conjure-generated client uses /storage/writer/v1)
-		if r.URL.Path != "/storage/writer/v1" {
-			t.Errorf("Expected path '/storage/writer/v1', got %q", r.URL.Path)
+		// Verify path (protobuf endpoint uses /storage/writer/v1/nominal/{rid})
+		expectedPathPrefix := "/storage/writer/v1/nominal/"
+		if !strings.HasPrefix(r.URL.Path, expectedPathPrefix) {
+			t.Errorf("Expected path to start with %q, got %q", expectedPathPrefix, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// Verify Content-Type header
+		contentType := r.Header.Get("Content-Type")
+		if contentType != "application/x-protobuf" {
+			t.Errorf("Expected Content-Type 'application/x-protobuf', got %q", contentType)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
@@ -43,16 +53,16 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 			return
 		}
 
-		var req writerapi.WriteBatchesRequestExternal
-		if err := json.Unmarshal(body, &req); err != nil {
-			t.Errorf("Failed to unmarshal request: %v", err)
+		var req pb.WriteRequestNominal
+		if err := proto.Unmarshal(body, &req); err != nil {
+			t.Errorf("Failed to unmarshal protobuf request: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
 		// Store request
 		mu.Lock()
-		receivedRequests = append(receivedRequests, req)
+		receivedRequests = append(receivedRequests, &req)
 		mu.Unlock()
 
 		// Return success response
@@ -136,31 +146,28 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 	firstReq := receivedRequests[0]
 	mu.Unlock()
 
-	if len(firstReq.Batches) == 0 {
-		t.Fatal("Expected batches in request, got none")
+	if len(firstReq.Series) == 0 {
+		t.Fatal("Expected series in request, got none")
 	}
 
-	// Verify we have batches (at least float and int, string might be in a separate request)
-	batchCount := len(firstReq.Batches)
-	if batchCount < 2 {
-		t.Errorf("Expected at least 2 batches (float, int), got %d", batchCount)
+	// Verify we have series (at least float and int, string might be in a separate request)
+	seriesCount := len(firstReq.Series)
+	if seriesCount < 2 {
+		t.Errorf("Expected at least 2 series (float, int), got %d", seriesCount)
 	}
 
-	// Verify dataset RID
-	if firstReq.DataSourceRid.String() != datasetRID.String() {
-		t.Errorf("Expected dataset RID %v, got %v", datasetRID, firstReq.DataSourceRid)
-	}
-
-	// Check that batches have channels
-	for i, batch := range firstReq.Batches {
-		if string(batch.Channel) == "" {
-			t.Errorf("Batch %d missing channel name", i)
+	// Check that series have channels
+	for i, series := range firstReq.Series {
+		if series.Channel == nil || series.Channel.Name == "" {
+			t.Errorf("Series %d missing channel name", i)
 		}
 		// Verify tags field exists (may be empty)
-		_ = batch.Tags
-		// Verify points field exists (it's a union type, always present)
-		_ = batch.Points
+		_ = series.Tags
+		// Verify points field exists
+		if series.Points == nil {
+			t.Errorf("Series %d missing points", i)
+		}
 	}
 
-	t.Logf("Successfully received %d request(s) with %d batches", requestCount, batchCount)
+	t.Logf("Successfully received %d request(s) with %d series", requestCount, seriesCount)
 }

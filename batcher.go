@@ -1,19 +1,22 @@
 package nominal_streaming
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/nominal-io/nominal-api-go/api/rids"
-	nominalapi "github.com/nominal-io/nominal-api-go/io/nominal/api"
-	writerapi "github.com/nominal-io/nominal-api-go/storage/writer/api"
+	pb "github.com/nominal-io/nominal-streaming/proto"
 	"github.com/palantir/pkg/bearertoken"
-	"github.com/palantir/pkg/safelong"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type channelName string
@@ -81,10 +84,11 @@ type batcher struct {
 	closed   bool
 
 	// API client
-	ctx          context.Context
-	writerClient writerapi.NominalChannelWriterServiceClient
-	authToken    bearertoken.Token
-	datasetRID   rids.NominalDataSourceOrDatasetRid
+	ctx        context.Context
+	httpClient *http.Client
+	baseURL    string
+	authToken  bearertoken.Token
+	datasetRID rids.NominalDataSourceOrDatasetRid
 
 	mu            sync.Mutex
 	floatBuffers  map[channelReferenceKey]*floatBuffer
@@ -95,7 +99,8 @@ type batcher struct {
 
 func newBatcher(
 	ctx context.Context,
-	writerClient writerapi.NominalChannelWriterServiceClient,
+	httpClient *http.Client,
+	baseURL string,
 	authToken bearertoken.Token,
 	datasetRID rids.NominalDataSourceOrDatasetRid,
 	flushSize int,
@@ -107,7 +112,8 @@ func newBatcher(
 		flushPeriod:   flushPeriod,
 		errors:        make(chan error, 100),
 		ctx:           ctx,
-		writerClient:  writerClient,
+		httpClient:    httpClient,
+		baseURL:       baseURL,
 		authToken:     authToken,
 		datasetRID:    datasetRID,
 		floatBuffers:  make(map[channelReferenceKey]*floatBuffer),
@@ -327,34 +333,64 @@ func (b *batcher) flushLocked() {
 
 func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch) {
 	defer b.wg.Done()
-	recordsBatches := make([]writerapi.RecordsBatchExternal, 0, len(floatBatches)+len(intBatches)+len(stringBatches))
+
+	series := make([]*pb.Series, 0, len(floatBatches)+len(intBatches)+len(stringBatches))
 
 	for _, batch := range floatBatches {
-		recordsBatches = append(recordsBatches, convertFloatBatch(batch))
+		series = append(series, convertFloatBatchToProto(batch))
 	}
 
 	for _, batch := range intBatches {
-		recordsBatches = append(recordsBatches, convertIntBatch(batch))
+		series = append(series, convertIntBatchToProto(batch))
 	}
 
 	for _, batch := range stringBatches {
-		recordsBatches = append(recordsBatches, convertStringBatch(batch))
+		series = append(series, convertStringBatchToProto(batch))
 	}
 
-	if err := b.sendToNominal(recordsBatches); err != nil {
+	if err := b.sendToNominal(series); err != nil {
 		b.reportError(fmt.Errorf("failed to send batch: %w", err))
 	}
 }
 
-func (b *batcher) sendToNominal(batches []writerapi.RecordsBatchExternal) error {
-	request := writerapi.WriteBatchesRequestExternal{
-		Batches:       batches,
-		DataSourceRid: b.datasetRID,
+func (b *batcher) sendToNominal(series []*pb.Series) error {
+	request := &pb.WriteRequestNominal{
+		Series: series,
 	}
 
-	if err := b.writerClient.WriteBatches(b.ctx, b.authToken, request); err != nil {
-		return fmt.Errorf("API call failed: %w", err)
+	// Serialize to protobuf
+	data, err := proto.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}
+
+	// Construct URL
+	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", b.baseURL, b.datasetRID.String())
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(b.ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Authorization", "Bearer "+string(b.authToken))
+
+	// Send request
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
 	return nil
 }
 
@@ -379,71 +415,74 @@ func hashTags(tags map[string]string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func convertFloatBatch(batch floatBatch) writerapi.RecordsBatchExternal {
-	points := make([]writerapi.DoublePoint, len(batch.Timestamps))
+func convertFloatBatchToProto(batch floatBatch) *pb.Series {
+	points := make([]*pb.DoublePoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
-		points[i] = writerapi.DoublePoint{
-			Timestamp: nanosecondsToTimestamp(batch.Timestamps[i]),
+		points[i] = &pb.DoublePoint{
+			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
 		}
 	}
 
-	return writerapi.RecordsBatchExternal{
-		Channel: nominalapi.Channel(batch.Channel),
-		Tags:    convertTags(batch.Tags),
-		Points:  writerapi.NewPointsExternalFromDouble(points),
+	return &pb.Series{
+		Channel: &pb.Channel{Name: string(batch.Channel)},
+		Tags:    batch.Tags,
+		Points: &pb.Points{
+			PointsType: &pb.Points_DoublePoints{
+				DoublePoints: &pb.DoublePoints{Points: points},
+			},
+		},
 	}
 }
 
-func convertIntBatch(batch intBatch) writerapi.RecordsBatchExternal {
-	points := make([]writerapi.IntPoint, len(batch.Timestamps))
+func convertIntBatchToProto(batch intBatch) *pb.Series {
+	points := make([]*pb.IntegerPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
-		points[i] = writerapi.IntPoint{
-			Timestamp: nanosecondsToTimestamp(batch.Timestamps[i]),
-			Value:     int(batch.Values[i]),
-		}
-	}
-
-	return writerapi.RecordsBatchExternal{
-		Channel: nominalapi.Channel(batch.Channel),
-		Tags:    convertTags(batch.Tags),
-		Points:  writerapi.NewPointsExternalFromInt(points),
-	}
-}
-
-func convertStringBatch(batch stringBatch) writerapi.RecordsBatchExternal {
-	points := make([]writerapi.StringPoint, len(batch.Timestamps))
-	for i := range batch.Timestamps {
-		points[i] = writerapi.StringPoint{
-			Timestamp: nanosecondsToTimestamp(batch.Timestamps[i]),
+		points[i] = &pb.IntegerPoint{
+			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
 		}
 	}
 
-	return writerapi.RecordsBatchExternal{
-		Channel: nominalapi.Channel(batch.Channel),
-		Tags:    convertTags(batch.Tags),
-		Points:  writerapi.NewPointsExternalFromString(points),
+	return &pb.Series{
+		Channel: &pb.Channel{Name: string(batch.Channel)},
+		Tags:    batch.Tags,
+		Points: &pb.Points{
+			PointsType: &pb.Points_IntegerPoints{
+				IntegerPoints: &pb.IntegerPoints{Points: points},
+			},
+		},
 	}
 }
 
-// convertTags converts tags map to Nominal API format.
-func convertTags(tags map[string]string) map[nominalapi.TagName]nominalapi.TagValue {
-	result := make(map[nominalapi.TagName]nominalapi.TagValue, len(tags))
-	for k, v := range tags {
-		result[nominalapi.TagName(k)] = nominalapi.TagValue(v)
+func convertStringBatchToProto(batch stringBatch) *pb.Series {
+	points := make([]*pb.StringPoint, len(batch.Timestamps))
+	for i := range batch.Timestamps {
+		points[i] = &pb.StringPoint{
+			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
+			Value:     batch.Values[i],
+		}
 	}
-	return result
+
+	return &pb.Series{
+		Channel: &pb.Channel{Name: string(batch.Channel)},
+		Tags:    batch.Tags,
+		Points: &pb.Points{
+			PointsType: &pb.Points_StringPoints{
+				StringPoints: &pb.StringPoints{Points: points},
+			},
+		},
+	}
 }
 
-// nanosecondsToTimestamp converts nanoseconds to Nominal API Timestamp.
-func nanosecondsToTimestamp(nanos NanosecondsUTC) nominalapi.Timestamp {
+// nanosecondsToTimestampProto converts nanoseconds to protobuf Timestamp.
+func nanosecondsToTimestampProto(nanos NanosecondsUTC) *timestamppb.Timestamp {
 	nanosInt64 := int64(nanos)
 	seconds := nanosInt64 / 1_000_000_000
-	remainingNanos := nanosInt64 % 1_000_000_000
+	remainingNanos := int32(nanosInt64 % 1_000_000_000)
 
-	return nominalapi.Timestamp{
-		Seconds: safelong.SafeLong(seconds),
-		Nanos:   safelong.SafeLong(remainingNanos),
+	return &timestamppb.Timestamp{
+		Seconds: seconds,
+		Nanos:   remainingNanos,
 	}
 }
