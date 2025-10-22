@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -15,58 +16,169 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// nominalAPIClient is a lightweight HTTP client wrapper for sending protobuf requests to Nominal's API.
-type nominalAPIClient struct {
-	httpClient *http.Client
-	baseURL    string
-	authToken  bearertoken.Token
+type retryConfig struct {
+	maxRetries     int
+	initialBackoff time.Duration
+	maxBackoff     time.Duration
+	backoffFactor  float64
 }
 
-// newNominalAPIClient creates a new API client.
-func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken bearertoken.Token) *nominalAPIClient {
-	return &nominalAPIClient{
-		httpClient: httpClient,
-		baseURL:    baseURL,
-		authToken:  authToken,
+func defaultRetryConfig() retryConfig {
+	return retryConfig{
+		maxRetries:     3,
+		initialBackoff: 100 * time.Millisecond,
+		maxBackoff:     10 * time.Second,
+		backoffFactor:  2.0,
 	}
 }
 
-// writeNominalData sends a WriteRequestNominal to the specified dataset.
+// isRetryableStatusCode determines if an HTTP status code should be retried.
+// Retryable codes include:
+// - 429 (Too Many Requests)
+// - 500 (Internal Server Error)
+// - 502 (Bad Gateway)
+// - 503 (Service Unavailable)
+// - 504 (Gateway Timeout)
+func isRetryableStatusCode(statusCode int) bool {
+	switch statusCode {
+	case http.StatusTooManyRequests, // 429
+		http.StatusInternalServerError, // 500
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
+		http.StatusGatewayTimeout:      // 504
+		return true
+	default:
+		return false
+	}
+}
+
+type nominalAPIClient struct {
+	httpClient  *http.Client
+	baseURL     string
+	authToken   bearertoken.Token
+	retryConfig retryConfig
+}
+
+func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken bearertoken.Token) *nominalAPIClient {
+	return &nominalAPIClient{
+		httpClient:  httpClient,
+		baseURL:     baseURL,
+		authToken:   authToken,
+		retryConfig: defaultRetryConfig(),
+	}
+}
+
 func (c *nominalAPIClient) writeNominalData(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, request *pb.WriteRequestNominal) error {
-	// Serialize to protobuf
 	data, err := proto.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}
 
-	// Construct URL
 	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", c.baseURL, datasetRID.String())
 
-	// Create HTTP request
+	return retryWithBackoff(ctx, c.retryConfig, func() error {
+		return c.doRequest(ctx, url, data)
+	})
+}
+
+func (c *nominalAPIClient) doRequest(ctx context.Context, url string, data []byte) error {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("Authorization", "Bearer "+string(c.authToken))
 
-	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return &retryableError{err: fmt.Errorf("failed to send request: %w", err)}
 	}
 	defer resp.Body.Close()
 
-	// Check response
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	if resp.StatusCode == http.StatusOK {
+		return nil
 	}
 
-	return nil
+	body, _ := io.ReadAll(resp.Body)
+	err = fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+
+	if isRetryableStatusCode(resp.StatusCode) {
+		return &retryableError{err: err}
+	}
+
+	return err
+}
+
+// retryableError wraps an error to indicate it should be retried.
+type retryableError struct {
+	err error
+}
+
+func (e *retryableError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryableError) Unwrap() error {
+	return e.err
+}
+
+func retryWithBackoff(ctx context.Context, config retryConfig, fn func() error) error {
+	var lastErr error
+	backoff := config.initialBackoff
+
+	for attempt := 0; attempt <= config.maxRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("context cancelled before attempt %d: %w", attempt+1, err)
+		}
+
+		err := fn()
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+
+		var retryErr *retryableError
+		isRetryable := false
+		if e, ok := err.(*retryableError); ok {
+			isRetryable = true
+			retryErr = e
+		}
+
+		if !isRetryable || attempt >= config.maxRetries {
+			if retryErr != nil {
+				return retryErr.err
+			}
+			return err
+		}
+
+		sleepWithJitter(ctx, backoff)
+		backoff = calculateNextBackoff(config, backoff)
+	}
+
+	return fmt.Errorf("max retries (%d) exceeded: %w", config.maxRetries, lastErr)
+}
+
+func calculateNextBackoff(config retryConfig, current time.Duration) time.Duration {
+	next := time.Duration(float64(current) * config.backoffFactor)
+	if next > config.maxBackoff {
+		return config.maxBackoff
+	}
+	return next
+}
+
+// sleepWithJitter adds +/-25% jitter to avoid thundering herd.
+func sleepWithJitter(ctx context.Context, base time.Duration) {
+	jitter := time.Duration(float64(base) * (0.75 + 0.5*rand.Float64()))
+	timer := time.NewTimer(jitter)
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+	}
 }
 
 type Client struct {
@@ -76,10 +188,8 @@ type Client struct {
 	authToken  bearertoken.Token
 }
 
-// Option is a function that configures a Client.
 type Option func(*Client) error
 
-// WithBaseURL sets a custom base URL for the API.
 func WithBaseURL(baseURL string) Option {
 	return func(c *Client) error {
 		if baseURL == "" {
