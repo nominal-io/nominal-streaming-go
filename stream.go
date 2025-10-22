@@ -1,6 +1,7 @@
 package nominal_streaming
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -126,6 +127,23 @@ func (s *DatasetStream) StringStream(ch string, options ...ChannelOption) *Chann
 	}
 	s.stringStreams[ref.channelReferenceKey] = stream
 	return stream
+}
+
+// EnqueueDynamic is a convenience method that accepts any supported value type and
+// automatically dispatches to the appropriate typed channel stream.
+// For slightly better performance, use FloatStream/IntStream/StringStream.
+func (s *DatasetStream) EnqueueDynamic(channel string, timestamp NanosecondsUTC, value any, options ...ChannelOption) error {
+	switch v := value.(type) {
+	case float64:
+		s.FloatStream(channel, options...).Enqueue(timestamp, v)
+	case int64:
+		s.IntStream(channel, options...).Enqueue(timestamp, v)
+	case string:
+		s.StringStream(channel, options...).Enqueue(timestamp, v)
+	default:
+		return fmt.Errorf("unsupported value type: %T (supported types: float64, int64, string)", value)
+	}
+	return nil
 }
 
 func (s *DatasetStream) Close() error {

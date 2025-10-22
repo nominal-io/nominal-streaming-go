@@ -3,6 +3,7 @@ package nominal_streaming
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
@@ -43,4 +44,75 @@ func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
 	if cs4 == nil {
 		t.Error("IntStream should return a valid instance")
 	}
+}
+
+func TestEnqueueDynamic_TypeDispatch(t *testing.T) {
+	client, err := NewClient("test-key")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	defer stream.Close()
+
+	timestamp := time.Now().UnixNano()
+
+	tests := []struct {
+		name      string
+		value     any
+		wantError bool
+	}{
+		{"float64", 23.5, false},
+		{"int64", int64(42), false},
+		{"string", "OK", false},
+		{"unsupported_bool", true, true},
+		{"unsupported_slice", []int{1, 2, 3}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := stream.EnqueueDynamic("test_channel", timestamp, tt.value)
+			if (err != nil) != tt.wantError {
+				t.Errorf("EnqueueDynamic() error = %v, wantError %v", err, tt.wantError)
+			}
+		})
+	}
+}
+
+func TestEnqueueDynamic_WithTags(t *testing.T) {
+	client, err := NewClient("test-key")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to parse dataset RID: %v", err)
+	}
+
+	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	defer stream.Close()
+
+	timestamp := time.Now().UnixNano()
+	tags := Tags{"sensor": "A1", "location": "north"}
+
+	err = stream.EnqueueDynamic("temperature", timestamp, 23.5, WithTags(tags))
+	if err != nil {
+		t.Errorf("EnqueueDynamic() with tags error = %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
 }
