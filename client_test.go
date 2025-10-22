@@ -351,10 +351,10 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 	defer stream.Close()
 
 	// Capture errors
-	errorReceived := false
+	var errorReceived atomic.Bool
 	go func() {
 		for range stream.Errors() {
-			errorReceived = true
+			errorReceived.Store(true)
 		}
 	}()
 
@@ -368,7 +368,7 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 		t.Errorf("expected 4 attempts (1 initial + 3 retries), got %d", attempts)
 	}
 
-	if !errorReceived {
+	if !errorReceived.Load() {
 		t.Error("expected error to be reported after max retries exceeded")
 	}
 }
@@ -398,10 +398,10 @@ func TestRetryLogic_NonRetryableError(t *testing.T) {
 	defer stream.Close()
 
 	// Capture errors
-	errorReceived := false
+	var errorReceived atomic.Bool
 	go func() {
 		for range stream.Errors() {
-			errorReceived = true
+			errorReceived.Store(true)
 		}
 	}()
 
@@ -415,7 +415,7 @@ func TestRetryLogic_NonRetryableError(t *testing.T) {
 		t.Errorf("expected 1 attempt (no retries for 400), got %d", attempts)
 	}
 
-	if !errorReceived {
+	if !errorReceived.Load() {
 		t.Error("expected error to be reported for non-retryable error")
 	}
 }

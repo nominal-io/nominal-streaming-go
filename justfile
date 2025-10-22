@@ -14,10 +14,6 @@ test:
 fmt:
     go fmt ./...
 
-# Run linter
-lint:
-    golangci-lint run ./...
-
 # Clean build artifacts
 clean:
     go clean -cache -testcache
@@ -35,15 +31,8 @@ install:
 gen-proto:
     protoc --go_out=. --go_opt=paths=source_relative proto/nominal_write.proto
 
-# Run example
-example:
-    go run examples/basic/main.go
-
-# Run all checks (format, lint, test)
-check: fmt lint test
-
-# Build and run example
-run: build example
+# Run all checks
+check: fmt test
 
 # Run throughput benchmarks
 benchmark:
