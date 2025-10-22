@@ -30,10 +30,7 @@ func BenchmarkThroughput_Float(b *testing.B) {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
-	if err != nil {
-		b.Fatalf("Failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc"
 
 	// Use default settings
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
@@ -77,10 +74,7 @@ func BenchmarkThroughput_Int(b *testing.B) {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
-	if err != nil {
-		b.Fatalf("Failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -123,10 +117,7 @@ func BenchmarkThroughput_String(b *testing.B) {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
-	if err != nil {
-		b.Fatalf("Failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -169,10 +160,7 @@ func BenchmarkThroughput_Mixed(b *testing.B) {
 		b.Fatalf("Failed to create client: %v", err)
 	}
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
-	if err != nil {
-		b.Fatalf("Failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {

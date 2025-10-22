@@ -4,12 +4,10 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/nominal-io/nominal-api-go/api/rids"
 )
 
 type DatasetStream struct {
-	datasetRID rids.NominalDataSourceOrDatasetRid
+	datasetRID string
 	batcher    *batcher
 
 	mu            sync.Mutex

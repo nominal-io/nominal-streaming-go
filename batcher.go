@@ -5,14 +5,11 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log"
-	"net/http"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/nominal-io/nominal-api-go/api/rids"
 	pb "github.com/nominal-io/nominal-streaming/proto"
-	"github.com/palantir/pkg/bearertoken"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -83,7 +80,7 @@ type batcher struct {
 	// API client
 	ctx        context.Context
 	apiClient  *nominalAPIClient
-	datasetRID rids.NominalDataSourceOrDatasetRid
+	datasetRID string
 
 	mu            sync.Mutex
 	floatBuffers  map[channelReferenceKey]*floatBuffer
@@ -94,14 +91,11 @@ type batcher struct {
 
 func newBatcher(
 	ctx context.Context,
-	httpClient *http.Client,
-	baseURL string,
-	authToken bearertoken.Token,
-	datasetRID rids.NominalDataSourceOrDatasetRid,
+	apiClient *nominalAPIClient,
+	datasetRID string,
 	flushSize int,
 	flushPeriod time.Duration,
 ) *batcher {
-	apiClient := newNominalAPIClient(httpClient, baseURL, authToken)
 	return &batcher{
 		closeChan:     make(chan struct{}),
 		flushSize:     flushSize,

@@ -13,10 +13,7 @@ func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -53,10 +50,7 @@ func TestEnqueueDynamic_TypeDispatch(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -95,10 +89,7 @@ func TestEnqueueDynamic_WithTags(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {

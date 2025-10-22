@@ -79,11 +79,7 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Parse dataset RID
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc")
-	if err != nil {
-		t.Fatalf("Failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.12345678-1234-1234-1234-123456789abc"
 
 	// Create stream with short flush interval for quick testing
 	flushInterval := 20 * time.Millisecond

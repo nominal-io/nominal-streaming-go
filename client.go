@@ -9,10 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nominal-io/nominal-api-go/api/rids"
 	pb "github.com/nominal-io/nominal-streaming/proto"
-	"github.com/palantir/pkg/bearertoken"
-	"github.com/palantir/pkg/rid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,13 +29,6 @@ func defaultRetryConfig() retryConfig {
 	}
 }
 
-// isRetryableStatusCode determines if an HTTP status code should be retried.
-// Retryable codes include:
-// - 429 (Too Many Requests)
-// - 500 (Internal Server Error)
-// - 502 (Bad Gateway)
-// - 503 (Service Unavailable)
-// - 504 (Gateway Timeout)
 func isRetryableStatusCode(statusCode int) bool {
 	switch statusCode {
 	case http.StatusTooManyRequests, // 429
@@ -55,11 +45,11 @@ func isRetryableStatusCode(statusCode int) bool {
 type nominalAPIClient struct {
 	httpClient  *http.Client
 	baseURL     string
-	authToken   bearertoken.Token
+	authToken   string
 	retryConfig retryConfig
 }
 
-func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken bearertoken.Token) *nominalAPIClient {
+func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken string) *nominalAPIClient {
 	return &nominalAPIClient{
 		httpClient:  httpClient,
 		baseURL:     baseURL,
@@ -68,13 +58,13 @@ func newNominalAPIClient(httpClient *http.Client, baseURL string, authToken bear
 	}
 }
 
-func (c *nominalAPIClient) writeNominalData(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, request *pb.WriteRequestNominal) error {
+func (c *nominalAPIClient) writeNominalData(ctx context.Context, datasetRID string, request *pb.WriteRequestNominal) error {
 	data, err := proto.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("failed to marshal protobuf: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", c.baseURL, datasetRID.String())
+	url := fmt.Sprintf("%s/storage/writer/v1/nominal/%s", c.baseURL, datasetRID)
 
 	return retryWithBackoff(ctx, c.retryConfig, func() error {
 		return c.doRequest(ctx, url, data)
@@ -89,7 +79,7 @@ func (c *nominalAPIClient) doRequest(ctx context.Context, url string, data []byt
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Set("Authorization", "Bearer "+string(c.authToken))
+	req.Header.Set("Authorization", "Bearer "+c.authToken)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -185,7 +175,7 @@ type Client struct {
 	apiKey     string
 	baseURL    string
 	httpClient *http.Client
-	authToken  bearertoken.Token
+	authToken  string
 }
 
 type Option func(*Client) error
@@ -205,7 +195,7 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 		apiKey:     apiKey,
 		baseURL:    "https://api.gov.nominal.io/api",
 		httpClient: &http.Client{Timeout: 30 * time.Second},
-		authToken:  bearertoken.Token(apiKey),
+		authToken:  apiKey,
 	}
 
 	for _, option := range options {
@@ -217,9 +207,9 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) NewDatasetStream(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, options ...DatasetStreamOption) (*DatasetStream, error) {
-
-	batcher := newBatcher(ctx, c.httpClient, c.baseURL, c.authToken, datasetRID, 65_536, 500*time.Millisecond)
+func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, options ...DatasetStreamOption) (*DatasetStream, error) {
+	apiClient := newNominalAPIClient(c.httpClient, c.baseURL, c.authToken)
+	batcher := newBatcher(ctx, apiClient, datasetRID, 65_536, 500*time.Millisecond)
 	batcher.start()
 
 	stream := &DatasetStream{
@@ -241,14 +231,4 @@ func (c *Client) NewDatasetStream(ctx context.Context, datasetRID rids.NominalDa
 
 func (c *Client) Close() error {
 	return nil
-}
-
-// ParseDatasetRID parses a dataset RID string into a typed RID.
-// Returns an error if the RID string is invalid.
-func ParseDatasetRID(ridString string) (rids.NominalDataSourceOrDatasetRid, error) {
-	parsedRID, err := rid.ParseRID(ridString)
-	if err != nil {
-		return rids.NominalDataSourceOrDatasetRid{}, fmt.Errorf("invalid dataset RID %q: %w", ridString, err)
-	}
-	return rids.NominalDataSourceOrDatasetRid(parsedRID), nil
 }

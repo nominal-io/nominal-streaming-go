@@ -57,10 +57,7 @@ func TestNewStream(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test-dataset")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test-dataset"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -80,10 +77,7 @@ func TestStream_EnqueueFloat(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -106,10 +100,7 @@ func TestStream_EnqueueString(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -132,10 +123,7 @@ func TestStream_BatchingBySizeThreshold(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -161,10 +149,7 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -190,10 +175,7 @@ func TestStream_MixedDataTypes(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -229,10 +211,7 @@ func TestStream_DifferentTagSets(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -263,10 +242,7 @@ func TestStream_Close(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, err := ParseDatasetRID("ri.nominal.main.dataset.test")
-	if err != nil {
-		t.Fatalf("failed to parse dataset RID: %v", err)
-	}
+	datasetRID := "ri.nominal.main.dataset.test"
 
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
@@ -297,7 +273,7 @@ func TestRetryLogic_Success(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, _ := ParseDatasetRID("ri.nominal.main.dataset.test")
+	datasetRID := "ri.nominal.main.dataset.test"
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
@@ -332,7 +308,7 @@ func TestRetryLogic_RetryableError_EventualSuccess(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, _ := ParseDatasetRID("ri.nominal.main.dataset.test")
+	datasetRID := "ri.nominal.main.dataset.test"
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
@@ -367,7 +343,7 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, _ := ParseDatasetRID("ri.nominal.main.dataset.test")
+	datasetRID := "ri.nominal.main.dataset.test"
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
@@ -414,7 +390,7 @@ func TestRetryLogic_NonRetryableError(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, _ := ParseDatasetRID("ri.nominal.main.dataset.test")
+	datasetRID := "ri.nominal.main.dataset.test"
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
@@ -466,7 +442,7 @@ func TestRetryLogic_RateLimitRetry(t *testing.T) {
 	}
 	defer client.Close()
 
-	datasetRID, _ := ParseDatasetRID("ri.nominal.main.dataset.test")
+	datasetRID := "ri.nominal.main.dataset.test"
 	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
