@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	pb "github.com/nominal-io/nominal-streaming/proto"
+	pb "github.com/nominal-io/nominal-streaming-go/proto"
 	"google.golang.org/protobuf/proto"
 )
 

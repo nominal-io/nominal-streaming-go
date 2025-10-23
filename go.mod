@@ -1,4 +1,4 @@
-module github.com/nominal-io/nominal-streaming
+module github.com/nominal-io/nominal-streaming-go
 
 go 1.25.0
 

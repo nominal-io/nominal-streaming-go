@@ -44,7 +44,7 @@ import (
     "context"
     "time"
 
-    nominal "github.com/nominal-io/nominal-streaming"
+    nominal "github.com/nominal-io/nominal-streaming-go"
 )
 
 func main() {
