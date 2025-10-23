@@ -1,4 +1,4 @@
-# nominal-streaming-go
+# ⟢ nominal-streaming-go
 
 Go client for streaming time-series data to Nominal.
 
@@ -18,13 +18,13 @@ temperature.Enqueue(time.Now().UnixNano(), 24.5)
 temperature.Enqueue(time.Now().UnixNano(), 25.5)
 ```
 
-Or, just write data points with the channel name and values, and the library will delegate to the appropriate stream for you:
+Or, write data points with the channel name and values, and the library will delegate to the appropriate stream for you:
 ```go
 ds, _ := client.NewDatasetStream(context.Background(), "ri.nominal.main.dataset.your-dataset-id")
 defer ds.Close()
-temperature := ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 23.5)
-temperature := ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 24.5)
-temperature := ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 25.5)
+ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 23.5)
+ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 24.5)
+ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 25.5)
 ```
 
 ### Complete Example
@@ -47,30 +47,33 @@ func main() {
         context.Background(),
         "ri.nominal.main.dataset.your-dataset-id",
     )
+    // Closing the stream blocks until all requests have been sent to Nominal
     defer stream.Close()
 
-    // Write typed data points
-    stream.FloatStream("temperature").Enqueue(time.Now().UnixNano(), 23.5)
-    stream.IntStream("count").Enqueue(time.Now().UnixNano(), 42)
-    stream.StringStream("status").Enqueue(time.Now().UnixNano(), "OK")
+    // Set error callback
+    stream.ProcessErrors(func(err error) {
+        log.Printf("Stream error: %v", err)
+    })
+
+    // Get typed data streams
+    temp := stream.FloatStream("temperature")
+    count := stream.IntStream("count")
+    // Optionally with tags..
+    status := stream.StringStream("status", nominal.WithTags(nominal.Tags{
+        "sensor_id": "A1",
+        "location":  "lab",
+    }))
+
+    // Add data to streams
+    temp.Enqueue(time.Now().UnixNano(), 23.5)
+    count.Enqueue(time.Now().UnixNano(), 42)
+    status.Enqueue(time.Now().UnixNano(), "OK")
+
+    // Add data without retrieving a channel stream up-front
+    ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 23.5)
+    ds.EnqueueDynamic("status", time.Now().UnixNano(), "OK", nominal.WithTags(nominal.Tags{
+        "sensor_id": "A1",
+        "location":  "lab",
+    }))
 }
-```
-
-### With Tags
-
-```go
-sensor := stream.FloatStream("temperature", nominal.WithTags(nominal.Tags{
-    "sensor_id": "A1",
-    "location":  "lab",
-}))
-
-sensor.Enqueue(time.Now().UnixNano(), 23.5)
-```
-
-### Error Handling
-
-```go
-stream.ProcessErrors(func(err error) {
-    log.Printf("Stream error: %v", err)
-})
 ```
