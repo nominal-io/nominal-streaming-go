@@ -594,8 +594,8 @@ const file_proto_nominal_write_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"^\n" +
 	"\fIntegerPoint\x128\n" +
 	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05valueBM\n" +
-	"\x1aio.nominal.scout.api.protoP\x01Z-github.com/nominal-io/nominal-streaming/protob\x06proto3"
+	"\x05value\x18\x02 \x01(\x03R\x05valueBP\n" +
+	"\x1aio.nominal.scout.api.protoP\x01Z0github.com/nominal-io/nominal-streaming-go/protob\x06proto3"
 
 var (
 	file_proto_nominal_write_proto_rawDescOnce sync.Once
