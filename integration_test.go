@@ -83,17 +83,19 @@ func TestClient_IntegrationWithMockServer(t *testing.T) {
 
 	// Create stream with short flush interval for quick testing
 	flushInterval := 20 * time.Millisecond
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID, WithFlushInterval(flushInterval))
+	stream, errCh, err := client.NewDatasetStream(context.Background(), datasetRID, WithFlushInterval(flushInterval))
 	if err != nil {
 		t.Fatalf("Failed to create stream: %v", err)
 	}
 	defer stream.Close()
 
-	// Setup error handler
+	// Capture errors
 	errorChan := make(chan error, 10)
-	stream.ProcessErrors(func(err error) {
-		errorChan <- err
-	})
+	go func() {
+		for err := range errCh {
+			errorChan <- err
+		}
+	}()
 
 	baseTime := time.Now().UnixNano()
 

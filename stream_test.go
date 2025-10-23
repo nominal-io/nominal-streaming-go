@@ -15,7 +15,7 @@ func TestGetChannelStream_ReturnsSameInstance(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestEnqueueDynamic_TypeDispatch(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestEnqueueDynamic_WithTags(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}

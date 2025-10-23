@@ -59,7 +59,7 @@ func TestNewStream(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test-dataset"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestStream_EnqueueFloat(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestStream_EnqueueString(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestStream_BatchingBySizeThreshold(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestStream_MixedDataTypes(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestStream_DifferentTagSets(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestStream_Close(t *testing.T) {
 
 	datasetRID := "ri.nominal.main.dataset.test"
 
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestRetryLogic_Success(t *testing.T) {
 	defer client.Close()
 
 	datasetRID := "ri.nominal.main.dataset.test"
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestRetryLogic_RetryableError_EventualSuccess(t *testing.T) {
 	defer client.Close()
 
 	datasetRID := "ri.nominal.main.dataset.test"
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 	defer client.Close()
 
 	datasetRID := "ri.nominal.main.dataset.test"
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, errCh, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 	// Capture errors
 	var errorReceived atomic.Bool
 	go func() {
-		for range stream.Errors() {
+		for range errCh {
 			errorReceived.Store(true)
 		}
 	}()
@@ -391,7 +391,7 @@ func TestRetryLogic_NonRetryableError(t *testing.T) {
 	defer client.Close()
 
 	datasetRID := "ri.nominal.main.dataset.test"
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, errCh, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}
@@ -400,7 +400,7 @@ func TestRetryLogic_NonRetryableError(t *testing.T) {
 	// Capture errors
 	var errorReceived atomic.Bool
 	go func() {
-		for range stream.Errors() {
+		for range errCh {
 			errorReceived.Store(true)
 		}
 	}()
@@ -443,7 +443,7 @@ func TestRetryLogic_RateLimitRetry(t *testing.T) {
 	defer client.Close()
 
 	datasetRID := "ri.nominal.main.dataset.test"
-	stream, err := client.NewDatasetStream(context.Background(), datasetRID)
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
 	if err != nil {
 		t.Fatalf("failed to create stream: %v", err)
 	}

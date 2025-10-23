@@ -10,8 +10,11 @@ go get github.com/nominal-io/nominal-streaming
 
 Get a typed stream for a channel and write data points:
 ```go
-ds, _ := client.NewDatasetStream(context.Background(), "ri.nominal.main.dataset.your-dataset-id")
+ds, _, _ := client.NewDatasetStream(
+    context.Background(), "ri.nominal.main.dataset.your-dataset-id",
+)
 defer ds.Close()
+
 temperature := ds.FloatStream("temperature")
 temperature.Enqueue(time.Now().UnixNano(), 23.5)
 temperature.Enqueue(time.Now().UnixNano(), 24.5)
@@ -20,8 +23,11 @@ temperature.Enqueue(time.Now().UnixNano(), 25.5)
 
 Or, write data points with the channel name and values, and the library will delegate to the appropriate stream for you:
 ```go
-ds, _ := client.NewDatasetStream(context.Background(), "ri.nominal.main.dataset.your-dataset-id")
+ds, _, _ := client.NewDatasetStream(
+    context.Background(), "ri.nominal.main.dataset.your-dataset-id",
+)
 defer ds.Close()
+
 ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 23.5)
 ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 24.5)
 ds.EnqueueDynamic("temperature", time.Now().UnixNano(), 25.5)
@@ -43,23 +49,25 @@ func main() {
     client, _ := nominal.NewClient("your-api-key")
     defer client.Close()
 
-    stream, _ := client.NewDatasetStream(
+    ds, errCh, _ := client.NewDatasetStream(
         context.Background(),
         "ri.nominal.main.dataset.your-dataset-id",
     )
     // Closing the stream blocks until all requests have been sent to Nominal
-    defer stream.Close()
+    defer ds.Close()
 
-    // Set error callback
-    stream.ProcessErrors(func(err error) {
-        log.Printf("Stream error: %v", err)
-    })
+    // Handle errors from the stream asynchronously
+    go func() {
+        for err := range errCh {
+            log.Printf("Stream error: %v", err)
+        }
+    }()
 
     // Get typed data streams
-    temp := stream.FloatStream("temperature")
-    count := stream.IntStream("count")
+    temp := ds.FloatStream("temperature")
+    count := ds.IntStream("count")
     // Optionally with tags..
-    status := stream.StringStream("status", nominal.WithTags(nominal.Tags{
+    status := ds.StringStream("status", nominal.WithTags(nominal.Tags{
         "sensor_id": "A1",
         "location":  "lab",
     }))

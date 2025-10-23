@@ -147,16 +147,3 @@ func (s *DatasetStream) EnqueueDynamic(channel string, timestamp NanosecondsUTC,
 func (s *DatasetStream) Close() error {
 	return s.batcher.close()
 }
-
-func (s *DatasetStream) Errors() <-chan error {
-	return s.batcher.errors
-}
-
-// ProcessErrors launches a goroutine to handle async errors until the stream closes.
-func (s *DatasetStream) ProcessErrors(handler func(error)) {
-	go func() {
-		for err := range s.Errors() {
-			handler(err)
-		}
-	}()
-}

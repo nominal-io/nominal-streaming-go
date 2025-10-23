@@ -207,7 +207,7 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 	return client, nil
 }
 
-func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, options ...DatasetStreamOption) (*DatasetStream, error) {
+func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, options ...DatasetStreamOption) (*DatasetStream, <-chan error, error) {
 	apiClient := newNominalAPIClient(c.httpClient, c.baseURL, c.authToken)
 	batcher := newBatcher(ctx, apiClient, datasetRID, 65_536, 500*time.Millisecond)
 
@@ -221,13 +221,13 @@ func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, option
 
 	for _, option := range options {
 		if err := option(stream); err != nil {
-			return nil, fmt.Errorf("failed to apply stream option: %w", err)
+			return nil, nil, fmt.Errorf("failed to apply stream option: %w", err)
 		}
 	}
 
 	batcher.start()
 
-	return stream, nil
+	return stream, batcher.errors, nil
 }
 
 func (c *Client) Close() error {
