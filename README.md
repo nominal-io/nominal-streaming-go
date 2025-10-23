@@ -3,7 +3,7 @@
 Go client for streaming time-series data to Nominal.
 
 ```bash
-go get github.com/nominal-io/nominal-streaming
+go get github.com/nominal-io/nominal-streaming-go
 ```
 
 ## Quick Start
