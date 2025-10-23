@@ -11,7 +11,8 @@ go get github.com/nominal-io/nominal-streaming
 Get a typed stream for a channel and write data points:
 ```go
 ds, _, _ := client.NewDatasetStream(
-    context.Background(), "ri.nominal.main.dataset.your-dataset-id",
+    context.Background(),
+    "ri.nominal.main.dataset.your-dataset-id",
 )
 defer ds.Close()
 
@@ -24,7 +25,8 @@ temperature.Enqueue(time.Now().UnixNano(), 25.5)
 Or, write data points with the channel name and values, and the library will delegate to the appropriate stream for you:
 ```go
 ds, _, _ := client.NewDatasetStream(
-    context.Background(), "ri.nominal.main.dataset.your-dataset-id",
+    context.Background(),
+    "ri.nominal.main.dataset.your-dataset-id",
 )
 defer ds.Close()
 
