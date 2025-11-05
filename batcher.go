@@ -555,8 +555,12 @@ func convertFloatArrayBatchToProto(batch floatArrayBatch) *pb.Series {
 		Channel: &pb.Channel{Name: string(batch.Channel)},
 		Tags:    batch.Tags,
 		Points: &pb.Points{
-			PointsType: &pb.Points_DoubleArrayPoints{
-				DoubleArrayPoints: &pb.DoubleArrayPoints{Points: points},
+			PointsType: &pb.Points_ArrayPoints{
+				ArrayPoints: &pb.ArrayPoints{
+					ArrayType: &pb.ArrayPoints_DoubleArrayPoints{
+						DoubleArrayPoints: &pb.DoubleArrayPoints{Points: points},
+					},
+				},
 			},
 		},
 	}
@@ -575,8 +579,12 @@ func convertStringArrayBatchToProto(batch stringArrayBatch) *pb.Series {
 		Channel: &pb.Channel{Name: string(batch.Channel)},
 		Tags:    batch.Tags,
 		Points: &pb.Points{
-			PointsType: &pb.Points_StringArrayPoints{
-				StringArrayPoints: &pb.StringArrayPoints{Points: points},
+			PointsType: &pb.Points_ArrayPoints{
+				ArrayPoints: &pb.ArrayPoints{
+					ArrayType: &pb.ArrayPoints_StringArrayPoints{
+						StringArrayPoints: &pb.StringArrayPoints{Points: points},
+					},
+				},
 			},
 		},
 	}

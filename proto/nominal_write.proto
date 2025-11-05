@@ -31,8 +31,7 @@ message Points {
     DoublePoints double_points = 1;
     StringPoints string_points = 2;
     IntegerPoints integer_points = 3;
-    DoubleArrayPoints double_array_points = 4;
-    StringArrayPoints string_array_points = 5;
+    ArrayPoints array_points = 4;
   }
 }
 
@@ -61,6 +60,13 @@ message StringPoint {
 message IntegerPoint {
   google.protobuf.Timestamp timestamp = 1;
   int64 value = 2;
+}
+
+message ArrayPoints {
+  oneof array_type {
+    DoubleArrayPoints double_array_points = 1;
+    StringArrayPoints string_array_points = 2;
+  }
 }
 
 message DoubleArrayPoints {

@@ -180,8 +180,7 @@ type Points struct {
 	//	*Points_DoublePoints
 	//	*Points_StringPoints
 	//	*Points_IntegerPoints
-	//	*Points_DoubleArrayPoints
-	//	*Points_StringArrayPoints
+	//	*Points_ArrayPoints
 	PointsType    isPoints_PointsType `protobuf_oneof:"points_type"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -251,19 +250,10 @@ func (x *Points) GetIntegerPoints() *IntegerPoints {
 	return nil
 }
 
-func (x *Points) GetDoubleArrayPoints() *DoubleArrayPoints {
+func (x *Points) GetArrayPoints() *ArrayPoints {
 	if x != nil {
-		if x, ok := x.PointsType.(*Points_DoubleArrayPoints); ok {
-			return x.DoubleArrayPoints
-		}
-	}
-	return nil
-}
-
-func (x *Points) GetStringArrayPoints() *StringArrayPoints {
-	if x != nil {
-		if x, ok := x.PointsType.(*Points_StringArrayPoints); ok {
-			return x.StringArrayPoints
+		if x, ok := x.PointsType.(*Points_ArrayPoints); ok {
+			return x.ArrayPoints
 		}
 	}
 	return nil
@@ -285,12 +275,8 @@ type Points_IntegerPoints struct {
 	IntegerPoints *IntegerPoints `protobuf:"bytes,3,opt,name=integer_points,json=integerPoints,proto3,oneof"`
 }
 
-type Points_DoubleArrayPoints struct {
-	DoubleArrayPoints *DoubleArrayPoints `protobuf:"bytes,4,opt,name=double_array_points,json=doubleArrayPoints,proto3,oneof"`
-}
-
-type Points_StringArrayPoints struct {
-	StringArrayPoints *StringArrayPoints `protobuf:"bytes,5,opt,name=string_array_points,json=stringArrayPoints,proto3,oneof"`
+type Points_ArrayPoints struct {
+	ArrayPoints *ArrayPoints `protobuf:"bytes,4,opt,name=array_points,json=arrayPoints,proto3,oneof"`
 }
 
 func (*Points_DoublePoints) isPoints_PointsType() {}
@@ -299,9 +285,7 @@ func (*Points_StringPoints) isPoints_PointsType() {}
 
 func (*Points_IntegerPoints) isPoints_PointsType() {}
 
-func (*Points_DoubleArrayPoints) isPoints_PointsType() {}
-
-func (*Points_StringArrayPoints) isPoints_PointsType() {}
+func (*Points_ArrayPoints) isPoints_PointsType() {}
 
 type DoublePoints struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -591,6 +575,88 @@ func (x *IntegerPoint) GetValue() int64 {
 	return 0
 }
 
+type ArrayPoints struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to ArrayType:
+	//
+	//	*ArrayPoints_DoubleArrayPoints
+	//	*ArrayPoints_StringArrayPoints
+	ArrayType     isArrayPoints_ArrayType `protobuf_oneof:"array_type"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArrayPoints) Reset() {
+	*x = ArrayPoints{}
+	mi := &file_proto_nominal_write_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArrayPoints) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArrayPoints) ProtoMessage() {}
+
+func (x *ArrayPoints) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_nominal_write_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArrayPoints.ProtoReflect.Descriptor instead.
+func (*ArrayPoints) Descriptor() ([]byte, []int) {
+	return file_proto_nominal_write_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ArrayPoints) GetArrayType() isArrayPoints_ArrayType {
+	if x != nil {
+		return x.ArrayType
+	}
+	return nil
+}
+
+func (x *ArrayPoints) GetDoubleArrayPoints() *DoubleArrayPoints {
+	if x != nil {
+		if x, ok := x.ArrayType.(*ArrayPoints_DoubleArrayPoints); ok {
+			return x.DoubleArrayPoints
+		}
+	}
+	return nil
+}
+
+func (x *ArrayPoints) GetStringArrayPoints() *StringArrayPoints {
+	if x != nil {
+		if x, ok := x.ArrayType.(*ArrayPoints_StringArrayPoints); ok {
+			return x.StringArrayPoints
+		}
+	}
+	return nil
+}
+
+type isArrayPoints_ArrayType interface {
+	isArrayPoints_ArrayType()
+}
+
+type ArrayPoints_DoubleArrayPoints struct {
+	DoubleArrayPoints *DoubleArrayPoints `protobuf:"bytes,1,opt,name=double_array_points,json=doubleArrayPoints,proto3,oneof"`
+}
+
+type ArrayPoints_StringArrayPoints struct {
+	StringArrayPoints *StringArrayPoints `protobuf:"bytes,2,opt,name=string_array_points,json=stringArrayPoints,proto3,oneof"`
+}
+
+func (*ArrayPoints_DoubleArrayPoints) isArrayPoints_ArrayType() {}
+
+func (*ArrayPoints_StringArrayPoints) isArrayPoints_ArrayType() {}
+
 type DoubleArrayPoints struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Points        []*DoubleArrayPoint    `protobuf:"bytes,1,rep,name=points,proto3" json:"points,omitempty"`
@@ -600,7 +666,7 @@ type DoubleArrayPoints struct {
 
 func (x *DoubleArrayPoints) Reset() {
 	*x = DoubleArrayPoints{}
-	mi := &file_proto_nominal_write_proto_msgTypes[10]
+	mi := &file_proto_nominal_write_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -612,7 +678,7 @@ func (x *DoubleArrayPoints) String() string {
 func (*DoubleArrayPoints) ProtoMessage() {}
 
 func (x *DoubleArrayPoints) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_nominal_write_proto_msgTypes[10]
+	mi := &file_proto_nominal_write_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -625,7 +691,7 @@ func (x *DoubleArrayPoints) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DoubleArrayPoints.ProtoReflect.Descriptor instead.
 func (*DoubleArrayPoints) Descriptor() ([]byte, []int) {
-	return file_proto_nominal_write_proto_rawDescGZIP(), []int{10}
+	return file_proto_nominal_write_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DoubleArrayPoints) GetPoints() []*DoubleArrayPoint {
@@ -644,7 +710,7 @@ type StringArrayPoints struct {
 
 func (x *StringArrayPoints) Reset() {
 	*x = StringArrayPoints{}
-	mi := &file_proto_nominal_write_proto_msgTypes[11]
+	mi := &file_proto_nominal_write_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -656,7 +722,7 @@ func (x *StringArrayPoints) String() string {
 func (*StringArrayPoints) ProtoMessage() {}
 
 func (x *StringArrayPoints) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_nominal_write_proto_msgTypes[11]
+	mi := &file_proto_nominal_write_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -669,7 +735,7 @@ func (x *StringArrayPoints) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringArrayPoints.ProtoReflect.Descriptor instead.
 func (*StringArrayPoints) Descriptor() ([]byte, []int) {
-	return file_proto_nominal_write_proto_rawDescGZIP(), []int{11}
+	return file_proto_nominal_write_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *StringArrayPoints) GetPoints() []*StringArrayPoint {
@@ -689,7 +755,7 @@ type DoubleArrayPoint struct {
 
 func (x *DoubleArrayPoint) Reset() {
 	*x = DoubleArrayPoint{}
-	mi := &file_proto_nominal_write_proto_msgTypes[12]
+	mi := &file_proto_nominal_write_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -701,7 +767,7 @@ func (x *DoubleArrayPoint) String() string {
 func (*DoubleArrayPoint) ProtoMessage() {}
 
 func (x *DoubleArrayPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_nominal_write_proto_msgTypes[12]
+	mi := &file_proto_nominal_write_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -714,7 +780,7 @@ func (x *DoubleArrayPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DoubleArrayPoint.ProtoReflect.Descriptor instead.
 func (*DoubleArrayPoint) Descriptor() ([]byte, []int) {
-	return file_proto_nominal_write_proto_rawDescGZIP(), []int{12}
+	return file_proto_nominal_write_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DoubleArrayPoint) GetTimestamp() *timestamppb.Timestamp {
@@ -741,7 +807,7 @@ type StringArrayPoint struct {
 
 func (x *StringArrayPoint) Reset() {
 	*x = StringArrayPoint{}
-	mi := &file_proto_nominal_write_proto_msgTypes[13]
+	mi := &file_proto_nominal_write_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -753,7 +819,7 @@ func (x *StringArrayPoint) String() string {
 func (*StringArrayPoint) ProtoMessage() {}
 
 func (x *StringArrayPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_nominal_write_proto_msgTypes[13]
+	mi := &file_proto_nominal_write_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -766,7 +832,7 @@ func (x *StringArrayPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringArrayPoint.ProtoReflect.Descriptor instead.
 func (*StringArrayPoint) Descriptor() ([]byte, []int) {
-	return file_proto_nominal_write_proto_rawDescGZIP(), []int{13}
+	return file_proto_nominal_write_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *StringArrayPoint) GetTimestamp() *timestamppb.Timestamp {
@@ -798,13 +864,12 @@ const file_proto_nominal_write_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x1d\n" +
 	"\aChannel\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\xcf\x03\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xdb\x02\n" +
 	"\x06Points\x12O\n" +
 	"\rdouble_points\x18\x01 \x01(\v2(.io.nominal.scout.api.proto.DoublePointsH\x00R\fdoublePoints\x12O\n" +
 	"\rstring_points\x18\x02 \x01(\v2(.io.nominal.scout.api.proto.StringPointsH\x00R\fstringPoints\x12R\n" +
-	"\x0einteger_points\x18\x03 \x01(\v2).io.nominal.scout.api.proto.IntegerPointsH\x00R\rintegerPoints\x12_\n" +
-	"\x13double_array_points\x18\x04 \x01(\v2-.io.nominal.scout.api.proto.DoubleArrayPointsH\x00R\x11doubleArrayPoints\x12_\n" +
-	"\x13string_array_points\x18\x05 \x01(\v2-.io.nominal.scout.api.proto.StringArrayPointsH\x00R\x11stringArrayPointsB\r\n" +
+	"\x0einteger_points\x18\x03 \x01(\v2).io.nominal.scout.api.proto.IntegerPointsH\x00R\rintegerPoints\x12L\n" +
+	"\farray_points\x18\x04 \x01(\v2'.io.nominal.scout.api.proto.ArrayPointsH\x00R\varrayPointsB\r\n" +
 	"\vpoints_type\"O\n" +
 	"\fDoublePoints\x12?\n" +
 	"\x06points\x18\x01 \x03(\v2'.io.nominal.scout.api.proto.DoublePointR\x06points\"O\n" +
@@ -820,7 +885,12 @@ const file_proto_nominal_write_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"^\n" +
 	"\fIntegerPoint\x128\n" +
 	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value\"Y\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value\"\xdd\x01\n" +
+	"\vArrayPoints\x12_\n" +
+	"\x13double_array_points\x18\x01 \x01(\v2-.io.nominal.scout.api.proto.DoubleArrayPointsH\x00R\x11doubleArrayPoints\x12_\n" +
+	"\x13string_array_points\x18\x02 \x01(\v2-.io.nominal.scout.api.proto.StringArrayPointsH\x00R\x11stringArrayPointsB\f\n" +
+	"\n" +
+	"array_type\"Y\n" +
 	"\x11DoubleArrayPoints\x12D\n" +
 	"\x06points\x18\x01 \x03(\v2,.io.nominal.scout.api.proto.DoubleArrayPointR\x06points\"Y\n" +
 	"\x11StringArrayPoints\x12D\n" +
@@ -845,7 +915,7 @@ func file_proto_nominal_write_proto_rawDescGZIP() []byte {
 	return file_proto_nominal_write_proto_rawDescData
 }
 
-var file_proto_nominal_write_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_proto_nominal_write_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_proto_nominal_write_proto_goTypes = []any{
 	(*WriteRequestNominal)(nil),   // 0: io.nominal.scout.api.proto.WriteRequestNominal
 	(*Series)(nil),                // 1: io.nominal.scout.api.proto.Series
@@ -857,38 +927,40 @@ var file_proto_nominal_write_proto_goTypes = []any{
 	(*DoublePoint)(nil),           // 7: io.nominal.scout.api.proto.DoublePoint
 	(*StringPoint)(nil),           // 8: io.nominal.scout.api.proto.StringPoint
 	(*IntegerPoint)(nil),          // 9: io.nominal.scout.api.proto.IntegerPoint
-	(*DoubleArrayPoints)(nil),     // 10: io.nominal.scout.api.proto.DoubleArrayPoints
-	(*StringArrayPoints)(nil),     // 11: io.nominal.scout.api.proto.StringArrayPoints
-	(*DoubleArrayPoint)(nil),      // 12: io.nominal.scout.api.proto.DoubleArrayPoint
-	(*StringArrayPoint)(nil),      // 13: io.nominal.scout.api.proto.StringArrayPoint
-	nil,                           // 14: io.nominal.scout.api.proto.Series.TagsEntry
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*ArrayPoints)(nil),           // 10: io.nominal.scout.api.proto.ArrayPoints
+	(*DoubleArrayPoints)(nil),     // 11: io.nominal.scout.api.proto.DoubleArrayPoints
+	(*StringArrayPoints)(nil),     // 12: io.nominal.scout.api.proto.StringArrayPoints
+	(*DoubleArrayPoint)(nil),      // 13: io.nominal.scout.api.proto.DoubleArrayPoint
+	(*StringArrayPoint)(nil),      // 14: io.nominal.scout.api.proto.StringArrayPoint
+	nil,                           // 15: io.nominal.scout.api.proto.Series.TagsEntry
+	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
 }
 var file_proto_nominal_write_proto_depIdxs = []int32{
 	1,  // 0: io.nominal.scout.api.proto.WriteRequestNominal.series:type_name -> io.nominal.scout.api.proto.Series
 	2,  // 1: io.nominal.scout.api.proto.Series.channel:type_name -> io.nominal.scout.api.proto.Channel
-	14, // 2: io.nominal.scout.api.proto.Series.tags:type_name -> io.nominal.scout.api.proto.Series.TagsEntry
+	15, // 2: io.nominal.scout.api.proto.Series.tags:type_name -> io.nominal.scout.api.proto.Series.TagsEntry
 	3,  // 3: io.nominal.scout.api.proto.Series.points:type_name -> io.nominal.scout.api.proto.Points
 	4,  // 4: io.nominal.scout.api.proto.Points.double_points:type_name -> io.nominal.scout.api.proto.DoublePoints
 	5,  // 5: io.nominal.scout.api.proto.Points.string_points:type_name -> io.nominal.scout.api.proto.StringPoints
 	6,  // 6: io.nominal.scout.api.proto.Points.integer_points:type_name -> io.nominal.scout.api.proto.IntegerPoints
-	10, // 7: io.nominal.scout.api.proto.Points.double_array_points:type_name -> io.nominal.scout.api.proto.DoubleArrayPoints
-	11, // 8: io.nominal.scout.api.proto.Points.string_array_points:type_name -> io.nominal.scout.api.proto.StringArrayPoints
-	7,  // 9: io.nominal.scout.api.proto.DoublePoints.points:type_name -> io.nominal.scout.api.proto.DoublePoint
-	8,  // 10: io.nominal.scout.api.proto.StringPoints.points:type_name -> io.nominal.scout.api.proto.StringPoint
-	9,  // 11: io.nominal.scout.api.proto.IntegerPoints.points:type_name -> io.nominal.scout.api.proto.IntegerPoint
-	15, // 12: io.nominal.scout.api.proto.DoublePoint.timestamp:type_name -> google.protobuf.Timestamp
-	15, // 13: io.nominal.scout.api.proto.StringPoint.timestamp:type_name -> google.protobuf.Timestamp
-	15, // 14: io.nominal.scout.api.proto.IntegerPoint.timestamp:type_name -> google.protobuf.Timestamp
-	12, // 15: io.nominal.scout.api.proto.DoubleArrayPoints.points:type_name -> io.nominal.scout.api.proto.DoubleArrayPoint
-	13, // 16: io.nominal.scout.api.proto.StringArrayPoints.points:type_name -> io.nominal.scout.api.proto.StringArrayPoint
-	15, // 17: io.nominal.scout.api.proto.DoubleArrayPoint.timestamp:type_name -> google.protobuf.Timestamp
-	15, // 18: io.nominal.scout.api.proto.StringArrayPoint.timestamp:type_name -> google.protobuf.Timestamp
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	10, // 7: io.nominal.scout.api.proto.Points.array_points:type_name -> io.nominal.scout.api.proto.ArrayPoints
+	7,  // 8: io.nominal.scout.api.proto.DoublePoints.points:type_name -> io.nominal.scout.api.proto.DoublePoint
+	8,  // 9: io.nominal.scout.api.proto.StringPoints.points:type_name -> io.nominal.scout.api.proto.StringPoint
+	9,  // 10: io.nominal.scout.api.proto.IntegerPoints.points:type_name -> io.nominal.scout.api.proto.IntegerPoint
+	16, // 11: io.nominal.scout.api.proto.DoublePoint.timestamp:type_name -> google.protobuf.Timestamp
+	16, // 12: io.nominal.scout.api.proto.StringPoint.timestamp:type_name -> google.protobuf.Timestamp
+	16, // 13: io.nominal.scout.api.proto.IntegerPoint.timestamp:type_name -> google.protobuf.Timestamp
+	11, // 14: io.nominal.scout.api.proto.ArrayPoints.double_array_points:type_name -> io.nominal.scout.api.proto.DoubleArrayPoints
+	12, // 15: io.nominal.scout.api.proto.ArrayPoints.string_array_points:type_name -> io.nominal.scout.api.proto.StringArrayPoints
+	13, // 16: io.nominal.scout.api.proto.DoubleArrayPoints.points:type_name -> io.nominal.scout.api.proto.DoubleArrayPoint
+	14, // 17: io.nominal.scout.api.proto.StringArrayPoints.points:type_name -> io.nominal.scout.api.proto.StringArrayPoint
+	16, // 18: io.nominal.scout.api.proto.DoubleArrayPoint.timestamp:type_name -> google.protobuf.Timestamp
+	16, // 19: io.nominal.scout.api.proto.StringArrayPoint.timestamp:type_name -> google.protobuf.Timestamp
+	20, // [20:20] is the sub-list for method output_type
+	20, // [20:20] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_proto_nominal_write_proto_init() }
@@ -900,8 +972,11 @@ func file_proto_nominal_write_proto_init() {
 		(*Points_DoublePoints)(nil),
 		(*Points_StringPoints)(nil),
 		(*Points_IntegerPoints)(nil),
-		(*Points_DoubleArrayPoints)(nil),
-		(*Points_StringArrayPoints)(nil),
+		(*Points_ArrayPoints)(nil),
+	}
+	file_proto_nominal_write_proto_msgTypes[10].OneofWrappers = []any{
+		(*ArrayPoints_DoubleArrayPoints)(nil),
+		(*ArrayPoints_StringArrayPoints)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -909,7 +984,7 @@ func file_proto_nominal_write_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_nominal_write_proto_rawDesc), len(file_proto_nominal_write_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
