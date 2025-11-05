@@ -10,10 +10,12 @@ type DatasetStream struct {
 	datasetRID string
 	batcher    *batcher
 
-	mu            sync.Mutex
-	floatStreams  map[channelReferenceKey]*ChannelStream[float64]
-	intStreams    map[channelReferenceKey]*ChannelStream[int64]
-	stringStreams map[channelReferenceKey]*ChannelStream[string]
+	mu                 sync.Mutex
+	floatStreams       map[channelReferenceKey]*ChannelStream[float64]
+	intStreams         map[channelReferenceKey]*ChannelStream[int64]
+	stringStreams      map[channelReferenceKey]*ChannelStream[string]
+	floatArrayStreams  map[channelReferenceKey]*ChannelStream[[]float64]
+	stringArrayStreams map[channelReferenceKey]*ChannelStream[[]string]
 }
 
 type DatasetStreamOption func(*DatasetStream) error
@@ -127,9 +129,51 @@ func (s *DatasetStream) StringStream(ch string, options ...ChannelOption) *Chann
 	return stream
 }
 
+func (s *DatasetStream) FloatArrayStream(ch string, options ...ChannelOption) *ChannelStream[[]float64] {
+	ref := buildChannelReference(ch, options)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if stream, exists := s.floatArrayStreams[ref.channelReferenceKey]; exists {
+		return stream
+	}
+
+	stream := &ChannelStream[[]float64]{
+		batcher: s.batcher,
+		ref:     ref,
+		enqueue: func(ts NanosecondsUTC, v []float64) {
+			s.batcher.addFloatArray(ref, ts, v)
+		},
+	}
+	s.floatArrayStreams[ref.channelReferenceKey] = stream
+	return stream
+}
+
+func (s *DatasetStream) StringArrayStream(ch string, options ...ChannelOption) *ChannelStream[[]string] {
+	ref := buildChannelReference(ch, options)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if stream, exists := s.stringArrayStreams[ref.channelReferenceKey]; exists {
+		return stream
+	}
+
+	stream := &ChannelStream[[]string]{
+		batcher: s.batcher,
+		ref:     ref,
+		enqueue: func(ts NanosecondsUTC, v []string) {
+			s.batcher.addStringArray(ref, ts, v)
+		},
+	}
+	s.stringArrayStreams[ref.channelReferenceKey] = stream
+	return stream
+}
+
 // EnqueueDynamic is a convenience method that accepts any supported value type and
 // automatically dispatches to the appropriate typed channel stream.
-// For slightly better performance, use FloatStream/IntStream/StringStream.
+// For slightly better performance, use typed stream methods directly.
 func (s *DatasetStream) EnqueueDynamic(channel string, timestamp NanosecondsUTC, value any, options ...ChannelOption) error {
 	switch v := value.(type) {
 	case float64:
@@ -138,8 +182,12 @@ func (s *DatasetStream) EnqueueDynamic(channel string, timestamp NanosecondsUTC,
 		s.IntStream(channel, options...).Enqueue(timestamp, v)
 	case string:
 		s.StringStream(channel, options...).Enqueue(timestamp, v)
+	case []float64:
+		s.FloatArrayStream(channel, options...).Enqueue(timestamp, v)
+	case []string:
+		s.StringArrayStream(channel, options...).Enqueue(timestamp, v)
 	default:
-		return fmt.Errorf("unsupported value type: %T (supported types: float64, int64, string)", value)
+		return fmt.Errorf("unsupported value type: %T (supported types: float64, int64, string, []float64, []string)", value)
 	}
 	return nil
 }

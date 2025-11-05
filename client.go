@@ -212,11 +212,13 @@ func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, option
 	batcher := newBatcher(ctx, apiClient, datasetRID, 65_536, 500*time.Millisecond)
 
 	stream := &DatasetStream{
-		datasetRID:    datasetRID,
-		batcher:       batcher,
-		floatStreams:  make(map[channelReferenceKey]*ChannelStream[float64]),
-		intStreams:    make(map[channelReferenceKey]*ChannelStream[int64]),
-		stringStreams: make(map[channelReferenceKey]*ChannelStream[string]),
+		datasetRID:         datasetRID,
+		batcher:            batcher,
+		floatStreams:       make(map[channelReferenceKey]*ChannelStream[float64]),
+		intStreams:         make(map[channelReferenceKey]*ChannelStream[int64]),
+		stringStreams:      make(map[channelReferenceKey]*ChannelStream[string]),
+		floatArrayStreams:  make(map[channelReferenceKey]*ChannelStream[[]float64]),
+		stringArrayStreams: make(map[channelReferenceKey]*ChannelStream[[]string]),
 	}
 
 	for _, option := range options {

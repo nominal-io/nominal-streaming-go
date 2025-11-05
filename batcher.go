@@ -36,6 +36,20 @@ type stringBatch struct {
 	Values     []string          `json:"values"`
 }
 
+type floatArrayBatch struct {
+	Channel    channelName       `json:"channel"`
+	Tags       map[string]string `json:"tags"`
+	Timestamps []NanosecondsUTC  `json:"timestamps"`
+	Values     [][]float64       `json:"values"`
+}
+
+type stringArrayBatch struct {
+	Channel    channelName       `json:"channel"`
+	Tags       map[string]string `json:"tags"`
+	Timestamps []NanosecondsUTC  `json:"timestamps"`
+	Values     [][]string        `json:"values"`
+}
+
 // channelReferenceKey is a lightweight key for map lookups (channel name + tags hash).
 type channelReferenceKey struct {
 	channel  channelName
@@ -66,6 +80,18 @@ type stringBuffer struct {
 	values     []string
 }
 
+type floatArrayBuffer struct {
+	ref        channelReference
+	timestamps []NanosecondsUTC
+	values     [][]float64
+}
+
+type stringArrayBuffer struct {
+	ref        channelReference
+	timestamps []NanosecondsUTC
+	values     [][]string
+}
+
 type batcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -82,11 +108,13 @@ type batcher struct {
 	apiClient  *nominalAPIClient
 	datasetRID string
 
-	mu            sync.Mutex
-	floatBuffers  map[channelReferenceKey]*floatBuffer
-	intBuffers    map[channelReferenceKey]*intBuffer
-	stringBuffers map[channelReferenceKey]*stringBuffer
-	totalPoints   int
+	mu                 sync.Mutex
+	floatBuffers       map[channelReferenceKey]*floatBuffer
+	intBuffers         map[channelReferenceKey]*intBuffer
+	stringBuffers      map[channelReferenceKey]*stringBuffer
+	floatArrayBuffers  map[channelReferenceKey]*floatArrayBuffer
+	stringArrayBuffers map[channelReferenceKey]*stringArrayBuffer
+	totalPoints        int
 }
 
 func newBatcher(
@@ -97,16 +125,18 @@ func newBatcher(
 	flushPeriod time.Duration,
 ) *batcher {
 	return &batcher{
-		closeChan:     make(chan struct{}),
-		flushSize:     flushSize,
-		flushPeriod:   flushPeriod,
-		errors:        make(chan error, 100),
-		ctx:           ctx,
-		apiClient:     apiClient,
-		datasetRID:    datasetRID,
-		floatBuffers:  make(map[channelReferenceKey]*floatBuffer),
-		intBuffers:    make(map[channelReferenceKey]*intBuffer),
-		stringBuffers: make(map[channelReferenceKey]*stringBuffer),
+		closeChan:          make(chan struct{}),
+		flushSize:          flushSize,
+		flushPeriod:        flushPeriod,
+		errors:             make(chan error, 100),
+		ctx:                ctx,
+		apiClient:          apiClient,
+		datasetRID:         datasetRID,
+		floatBuffers:       make(map[channelReferenceKey]*floatBuffer),
+		intBuffers:         make(map[channelReferenceKey]*intBuffer),
+		stringBuffers:      make(map[channelReferenceKey]*stringBuffer),
+		floatArrayBuffers:  make(map[channelReferenceKey]*floatArrayBuffer),
+		stringArrayBuffers: make(map[channelReferenceKey]*stringArrayBuffer),
 	}
 }
 
@@ -260,6 +290,52 @@ func (b *batcher) addString(ref channelReference, timestamp NanosecondsUTC, valu
 	}
 }
 
+func (b *batcher) addFloatArray(ref channelReference, timestamp NanosecondsUTC, value []float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	buffer, exists := b.floatArrayBuffers[ref.channelReferenceKey]
+	if !exists {
+		buffer = &floatArrayBuffer{
+			ref:        ref,
+			timestamps: make([]NanosecondsUTC, 0),
+			values:     make([][]float64, 0),
+		}
+		b.floatArrayBuffers[ref.channelReferenceKey] = buffer
+	}
+
+	buffer.timestamps = append(buffer.timestamps, timestamp)
+	buffer.values = append(buffer.values, value)
+	b.totalPoints++
+
+	if b.totalPoints >= b.flushSize {
+		b.flushLocked()
+	}
+}
+
+func (b *batcher) addStringArray(ref channelReference, timestamp NanosecondsUTC, value []string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	buffer, exists := b.stringArrayBuffers[ref.channelReferenceKey]
+	if !exists {
+		buffer = &stringArrayBuffer{
+			ref:        ref,
+			timestamps: make([]NanosecondsUTC, 0),
+			values:     make([][]string, 0),
+		}
+		b.stringArrayBuffers[ref.channelReferenceKey] = buffer
+	}
+
+	buffer.timestamps = append(buffer.timestamps, timestamp)
+	buffer.values = append(buffer.values, value)
+	b.totalPoints++
+
+	if b.totalPoints >= b.flushSize {
+		b.flushLocked()
+	}
+}
+
 func (b *batcher) flush() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -313,16 +389,44 @@ func (b *batcher) flushLocked() {
 		}
 	}
 
+	floatArrayBatches := make([]floatArrayBatch, 0, len(b.floatArrayBuffers))
+	for _, buffer := range b.floatArrayBuffers {
+		if len(buffer.timestamps) > 0 {
+			floatArrayBatches = append(floatArrayBatches, floatArrayBatch{
+				Channel:    buffer.ref.channel,
+				Tags:       buffer.ref.tags,
+				Timestamps: buffer.timestamps,
+				Values:     buffer.values,
+			})
+			buffer.timestamps = make([]NanosecondsUTC, 0)
+			buffer.values = make([][]float64, 0)
+		}
+	}
+
+	stringArrayBatches := make([]stringArrayBatch, 0, len(b.stringArrayBuffers))
+	for _, buffer := range b.stringArrayBuffers {
+		if len(buffer.timestamps) > 0 {
+			stringArrayBatches = append(stringArrayBatches, stringArrayBatch{
+				Channel:    buffer.ref.channel,
+				Tags:       buffer.ref.tags,
+				Timestamps: buffer.timestamps,
+				Values:     buffer.values,
+			})
+			buffer.timestamps = make([]NanosecondsUTC, 0)
+			buffer.values = make([][]string, 0)
+		}
+	}
+
 	b.totalPoints = 0
 
 	b.wg.Add(1)
-	go b.sendBatches(floatBatches, intBatches, stringBatches)
+	go b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
 }
 
-func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch) {
+func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) {
 	defer b.wg.Done()
 
-	series := make([]*pb.Series, 0, len(floatBatches)+len(intBatches)+len(stringBatches))
+	series := make([]*pb.Series, 0, len(floatBatches)+len(intBatches)+len(stringBatches)+len(floatArrayBatches)+len(stringArrayBatches))
 
 	for _, batch := range floatBatches {
 		series = append(series, convertFloatBatchToProto(batch))
@@ -334,6 +438,14 @@ func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, 
 
 	for _, batch := range stringBatches {
 		series = append(series, convertStringBatchToProto(batch))
+	}
+
+	for _, batch := range floatArrayBatches {
+		series = append(series, convertFloatArrayBatchToProto(batch))
+	}
+
+	for _, batch := range stringArrayBatches {
+		series = append(series, convertStringArrayBatchToProto(batch))
 	}
 
 	if err := b.sendToNominal(series); err != nil {
@@ -425,6 +537,54 @@ func convertStringBatchToProto(batch stringBatch) *pb.Series {
 		Points: &pb.Points{
 			PointsType: &pb.Points_StringPoints{
 				StringPoints: &pb.StringPoints{Points: points},
+			},
+		},
+	}
+}
+
+func convertFloatArrayBatchToProto(batch floatArrayBatch) *pb.Series {
+	points := make([]*pb.DoubleArrayPoint, len(batch.Timestamps))
+	for i := range batch.Timestamps {
+		points[i] = &pb.DoubleArrayPoint{
+			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
+			Value:     batch.Values[i],
+		}
+	}
+
+	return &pb.Series{
+		Channel: &pb.Channel{Name: string(batch.Channel)},
+		Tags:    batch.Tags,
+		Points: &pb.Points{
+			PointsType: &pb.Points_ArrayPoints{
+				ArrayPoints: &pb.ArrayPoints{
+					ArrayType: &pb.ArrayPoints_DoubleArrayPoints{
+						DoubleArrayPoints: &pb.DoubleArrayPoints{Points: points},
+					},
+				},
+			},
+		},
+	}
+}
+
+func convertStringArrayBatchToProto(batch stringArrayBatch) *pb.Series {
+	points := make([]*pb.StringArrayPoint, len(batch.Timestamps))
+	for i := range batch.Timestamps {
+		points[i] = &pb.StringArrayPoint{
+			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
+			Value:     batch.Values[i],
+		}
+	}
+
+	return &pb.Series{
+		Channel: &pb.Channel{Name: string(batch.Channel)},
+		Tags:    batch.Tags,
+		Points: &pb.Points{
+			PointsType: &pb.Points_ArrayPoints{
+				ArrayPoints: &pb.ArrayPoints{
+					ArrayType: &pb.ArrayPoints_StringArrayPoints{
+						StringArrayPoints: &pb.StringArrayPoints{Points: points},
+					},
+				},
 			},
 		},
 	}

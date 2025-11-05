@@ -8,5 +8,5 @@ type Tags = map[string]string
 
 // Value is a constraint for supported data point value types.
 type Value interface {
-	float64 | int64 | string
+	float64 | int64 | string | []float64 | []string
 }
