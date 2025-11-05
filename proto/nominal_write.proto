@@ -1,6 +1,5 @@
 syntax = "proto3";
 
-// TODO(jnewman): move these to the right directory when we fix the python package generation
 // buf:lint:ignore PACKAGE_VERSION_SUFFIX
 // buf:lint:ignore PACKAGE_DIRECTORY_MATCH
 package io.nominal.scout.api.proto;

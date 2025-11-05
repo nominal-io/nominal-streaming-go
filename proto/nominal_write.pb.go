@@ -4,7 +4,6 @@
 // 	protoc        v5.29.3
 // source: proto/nominal_write.proto
 
-// TODO(jnewman): move these to the right directory when we fix the python package generation
 // buf:lint:ignore PACKAGE_VERSION_SUFFIX
 // buf:lint:ignore PACKAGE_DIRECTORY_MATCH
 
