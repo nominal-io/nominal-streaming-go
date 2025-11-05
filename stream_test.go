@@ -68,8 +68,10 @@ func TestEnqueueDynamic_TypeDispatch(t *testing.T) {
 		{"float64", 23.5, false},
 		{"int64", int64(42), false},
 		{"string", "OK", false},
+		{"[]float64", []float64{1.0, 2.0, 3.0}, false},
+		{"[]string", []string{"a", "b", "c"}, false},
 		{"unsupported_bool", true, true},
-		{"unsupported_slice", []int{1, 2, 3}, true},
+		{"unsupported_[]int", []int{1, 2, 3}, true},
 	}
 
 	for _, tt := range tests {
@@ -103,6 +105,46 @@ func TestEnqueueDynamic_WithTags(t *testing.T) {
 	err = stream.EnqueueDynamic("temperature", timestamp, 23.5, WithTags(tags))
 	if err != nil {
 		t.Errorf("EnqueueDynamic() with tags error = %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestArrayStreams(t *testing.T) {
+	client, err := NewClient("test-key")
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	datasetRID := "ri.nominal.main.dataset.test"
+
+	stream, _, err := client.NewDatasetStream(context.Background(), datasetRID)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	defer stream.Close()
+
+	timestamp := time.Now().UnixNano()
+
+	// Test FloatArrayStream
+	floatArrayStream := stream.FloatArrayStream("sensor_readings")
+	floatArrayStream.Enqueue(timestamp, []float64{1.1, 2.2, 3.3, 4.4})
+	floatArrayStream.Enqueue(timestamp+1000, []float64{5.5, 6.6})
+
+	// Test StringArrayStream
+	stringArrayStream := stream.StringArrayStream("status_codes")
+	stringArrayStream.Enqueue(timestamp, []string{"OK", "WARN", "ERROR"})
+	stringArrayStream.Enqueue(timestamp+1000, []string{"OK"})
+
+	// Test with tags
+	taggedFloatArray := stream.FloatArrayStream("measurements", WithTags(Tags{"sensor": "A1"}))
+	taggedFloatArray.Enqueue(timestamp, []float64{10.0, 20.0, 30.0})
+
+	// Verify same instance is returned
+	floatArrayStream2 := stream.FloatArrayStream("sensor_readings")
+	if floatArrayStream != floatArrayStream2 {
+		t.Error("FloatArrayStream should return the same instance for identical parameters")
 	}
 
 	time.Sleep(100 * time.Millisecond)

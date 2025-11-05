@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+// TODO(jnewman): move these to the right directory when we fix the python package generation
 // buf:lint:ignore PACKAGE_VERSION_SUFFIX
 // buf:lint:ignore PACKAGE_DIRECTORY_MATCH
 package io.nominal.scout.api.proto;
@@ -31,6 +32,8 @@ message Points {
     DoublePoints double_points = 1;
     StringPoints string_points = 2;
     IntegerPoints integer_points = 3;
+    DoubleArrayPoints double_array_points = 4;
+    StringArrayPoints string_array_points = 5;
   }
 }
 
@@ -59,4 +62,22 @@ message StringPoint {
 message IntegerPoint {
   google.protobuf.Timestamp timestamp = 1;
   int64 value = 2;
+}
+
+message DoubleArrayPoints {
+  repeated DoubleArrayPoint points = 1;
+}
+
+message StringArrayPoints {
+  repeated StringArrayPoint points = 1;
+}
+
+message DoubleArrayPoint {
+  google.protobuf.Timestamp timestamp = 1;
+  repeated double value = 2;
+}
+
+message StringArrayPoint {
+  google.protobuf.Timestamp timestamp = 1;
+  repeated string value = 2;
 }
