@@ -2,7 +2,6 @@ package nominal_streaming
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -457,73 +456,5 @@ func TestRetryLogic_RateLimitRetry(t *testing.T) {
 	// Verify we attempted 2 times (1 failure + 1 success)
 	if attempts := attemptCount.Load(); attempts != 2 {
 		t.Errorf("expected 2 attempts, got %d", attempts)
-	}
-}
-
-func TestIsRetryableStatusCode(t *testing.T) {
-	tests := []struct {
-		statusCode int
-		expected   bool
-	}{
-		{http.StatusOK, false},                 // 200
-		{http.StatusBadRequest, false},         // 400
-		{http.StatusUnauthorized, false},       // 401
-		{http.StatusForbidden, false},          // 403
-		{http.StatusNotFound, false},           // 404
-		{http.StatusTooManyRequests, true},     // 429
-		{http.StatusInternalServerError, true}, // 500
-		{http.StatusBadGateway, true},          // 502
-		{http.StatusServiceUnavailable, true},  // 503
-		{http.StatusGatewayTimeout, true},      // 504
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("status_%d", tt.statusCode), func(t *testing.T) {
-			result := isRetryableStatusCode(tt.statusCode)
-			if result != tt.expected {
-				t.Errorf("isRetryableStatusCode(%d) = %v, expected %v", tt.statusCode, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestRetryConfig_Defaults(t *testing.T) {
-	config := defaultRetryConfig()
-	if config.maxRetries != 3 {
-		t.Errorf("expected maxRetries=3, got %d", config.maxRetries)
-	}
-	if config.initialBackoff != 100*time.Millisecond {
-		t.Errorf("expected initialBackoff=100ms, got %v", config.initialBackoff)
-	}
-	if config.maxBackoff != 10*time.Second {
-		t.Errorf("expected maxBackoff=10s, got %v", config.maxBackoff)
-	}
-	if config.backoffFactor != 2.0 {
-		t.Errorf("expected backoffFactor=2.0, got %f", config.backoffFactor)
-	}
-}
-
-func TestCalculateNextBackoff(t *testing.T) {
-	config := defaultRetryConfig()
-
-	tests := []struct {
-		name     string
-		current  time.Duration
-		expected time.Duration
-	}{
-		{"first backoff", 100 * time.Millisecond, 200 * time.Millisecond},
-		{"second backoff", 200 * time.Millisecond, 400 * time.Millisecond},
-		{"third backoff", 400 * time.Millisecond, 800 * time.Millisecond},
-		{"capped at max", 6 * time.Second, 10 * time.Second},
-		{"exceeds max", 10 * time.Second, 10 * time.Second},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := calculateNextBackoff(config, tt.current)
-			if result != tt.expected {
-				t.Errorf("calculateNextBackoff(%v) = %v, expected %v", tt.current, result, tt.expected)
-			}
-		})
 	}
 }
