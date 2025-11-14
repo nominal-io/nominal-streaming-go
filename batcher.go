@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nominal-io/nominal-api-go/api/rids"
 	pb "github.com/nominal-io/nominal-streaming-go/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -106,7 +107,7 @@ type batcher struct {
 	// API client
 	ctx        context.Context
 	apiClient  *nominalAPIClient
-	datasetRID string
+	datasetRID rids.NominalDataSourceOrDatasetRid
 
 	mu                 sync.Mutex
 	floatBuffers       map[channelReferenceKey]*floatBuffer
@@ -120,7 +121,7 @@ type batcher struct {
 func newBatcher(
 	ctx context.Context,
 	apiClient *nominalAPIClient,
-	datasetRID string,
+	datasetRID rids.NominalDataSourceOrDatasetRid,
 	flushSize int,
 	flushPeriod time.Duration,
 ) *batcher {
