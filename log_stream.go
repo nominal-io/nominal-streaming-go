@@ -34,7 +34,7 @@ func WithLogFlushInterval(interval time.Duration) DatasetLogStreamOption {
 type LogChannelStream struct {
 	batcher *logBatcher
 	channel string
-	enqueue func(NanosecondsUTC, Log, map[string]string)
+	enqueue func(timestamp NanosecondsUTC, message Log, args map[string]string)
 }
 
 func (ls *LogChannelStream) Enqueue(timestamp NanosecondsUTC, message Log) {
