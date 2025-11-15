@@ -196,13 +196,21 @@ func (b *logBatcher) flushLocked() {
 func (b *logBatcher) sendLogBatches(batches []logBatch) {
 	defer b.wg.Done()
 
-	logPoints := make([]writerapi.LogPoint, 0)
+	totalCapacity := 0
+	for _, batch := range batches {
+		totalCapacity += len(batch.Timestamps)
+	}
+	logPoints := make([]writerapi.LogPoint, 0, totalCapacity)
 
 	for _, batch := range batches {
 		for i := range batch.Timestamps {
 			seconds := batch.Timestamps[i] / 1_000_000_000
+			nanos := batch.Timestamps[i] % 1_000_000_000
 			logPoint := writerapi.LogPoint{
-				Timestamp: api.Timestamp{Seconds: safelong.SafeLong(seconds)},
+				Timestamp: api.Timestamp{
+					Seconds: safelong.SafeLong(seconds),
+					Nanos:   safelong.SafeLong(nanos),
+				},
 				Value: writerapi.LogValue{
 					Message: string(batch.Values[i].message),
 					Args:    batch.Values[i].args,
