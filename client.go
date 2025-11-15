@@ -59,6 +59,10 @@ func (c *nominalAPIClient) writeNominalData(ctx context.Context, datasetRID rids
 	return c.writerClient.WriteNominalBatches(ctx, c.authToken, datasetRID, requestBody)
 }
 
+func (c *nominalAPIClient) writeLogs(ctx context.Context, datasetRID rids.NominalDataSourceOrDatasetRid, request writerapi.WriteLogsRequest) error {
+	return c.writerClient.WriteLogs(ctx, c.authToken, datasetRID, request)
+}
+
 type Client struct {
 	baseURL   string
 	authToken string
@@ -122,6 +126,35 @@ func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, option
 	batcher.start()
 
 	return stream, batcher.errors, nil
+}
+
+func (c *Client) NewDatasetLogStream(ctx context.Context, datasetRID string, options ...DatasetLogStreamOption) (*DatasetLogStream, <-chan error, error) {
+	var rid rids.NominalDataSourceOrDatasetRid
+	if err := rid.UnmarshalText([]byte(datasetRID)); err != nil {
+		return nil, nil, fmt.Errorf("invalid dataset RID: %w", err)
+	}
+
+	apiClient, err := newNominalAPIClient(c.baseURL, c.authToken)
+	if err != nil {
+		return nil, nil, err
+	}
+	logBatcher := newLogBatcher(ctx, apiClient, rid, 65_536, 500*time.Millisecond)
+
+	stream := &DatasetLogStream{
+		datasetRID: datasetRID,
+		batcher:    logBatcher,
+		logStreams: make(map[channelReferenceKey]*LogChannelStream),
+	}
+
+	for _, option := range options {
+		if err := option(stream); err != nil {
+			return nil, nil, fmt.Errorf("failed to apply stream option: %w", err)
+		}
+	}
+
+	logBatcher.start()
+
+	return stream, logBatcher.errors, nil
 }
 
 func (c *Client) Close() error {

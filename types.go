@@ -10,3 +10,6 @@ type Tags = map[string]string
 type Value interface {
 	float64 | int64 | string | []float64 | []string
 }
+
+// Log represents a log message string that will be sent via the WriteLogs endpoint.
+type Log string
