@@ -17,38 +17,38 @@ import (
 type channelName string
 
 type floatBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []float64         `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []float64
 }
 
 type intBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []int64           `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []int64
 }
 
 type stringBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []string          `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []string
 }
 
 type floatArrayBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     [][]float64       `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     [][]float64
 }
 
 type stringArrayBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     [][]string        `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     [][]string
 }
 
 // channelReferenceKey is a lightweight key for map lookups (channel name + tags hash).
