@@ -190,11 +190,15 @@ func (b *logBatcher) flushLocked() {
 	b.totalPoints = 0
 
 	b.wg.Add(1)
-	go b.sendLogBatches(logBatches)
+	go func() {
+		defer b.wg.Done()
+		if err := b.sendLogBatches(logBatches); err != nil {
+			b.reportError(err)
+		}
+	}()
 }
 
-func (b *logBatcher) sendLogBatches(batches []logBatch) {
-	defer b.wg.Done()
+func (b *logBatcher) sendLogBatches(batches []logBatch) error {
 
 	totalCapacity := 0
 	for _, batch := range batches {
@@ -203,6 +207,9 @@ func (b *logBatcher) sendLogBatches(batches []logBatch) {
 	logPoints := make([]writerapi.LogPoint, 0, totalCapacity)
 
 	for _, batch := range batches {
+		if len(batch.Timestamps) != len(batch.Values) {
+			return fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+		}
 		for i := range batch.Timestamps {
 			seconds := batch.Timestamps[i] / 1_000_000_000
 			nanos := batch.Timestamps[i] % 1_000_000_000
@@ -224,6 +231,8 @@ func (b *logBatcher) sendLogBatches(batches []logBatch) {
 	}
 
 	if err := b.apiClient.writeLogs(b.ctx, b.datasetRID, req); err != nil {
-		b.reportError(fmt.Errorf("failed to write logs: %w", err))
+		return fmt.Errorf("failed to write logs: %w", err)
 	}
+
+	return nil
 }
