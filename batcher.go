@@ -449,17 +449,13 @@ func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, 
 		series = append(series, convertStringArrayBatchToProto(batch))
 	}
 
-	if err := b.sendToNominal(series); err != nil {
-		b.reportError(fmt.Errorf("failed to send batch: %w", err))
-	}
-}
-
-func (b *batcher) sendToNominal(series []*pb.Series) error {
 	request := &pb.WriteRequestNominal{
 		Series: series,
 	}
 
-	return b.apiClient.writeNominalData(b.ctx, b.datasetRID, request)
+	if err := b.apiClient.writeNominalData(b.ctx, b.datasetRID, request); err != nil {
+		b.reportError(fmt.Errorf("failed to send batch: %w", err))
+	}
 }
 
 func hashTags(tags map[string]string) string {
