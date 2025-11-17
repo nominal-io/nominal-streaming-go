@@ -6,7 +6,10 @@ import (
 )
 
 // DatasetLogStream is parallel to DatasetStream but specifically for logs.
-// Use LogStream() to get a channel-specific stream.
+// Logs have different "tag" semantics. With logs, key-value pairs are provided
+// per-message and not indexed as tags on the channel, they may be high-cardinality.
+//
+// Use LogStream() to get a channel-specific stream to write logs to.
 type DatasetLogStream struct {
 	datasetRID string
 	batcher    *logBatcher
@@ -37,14 +40,25 @@ type LogChannelStream struct {
 	enqueue func(timestamp NanosecondsUTC, message Log, args map[string]string)
 }
 
+// Enqueue enqueues a log message.
 func (ls *LogChannelStream) Enqueue(timestamp NanosecondsUTC, message Log) {
 	ls.enqueue(timestamp, message, nil)
 }
 
+// EnqueueWithArgs enqueues a log message with associated key-value pair arguments.
+// These arguments are specific to this log entry. For example, if you have a log message
+//
+//	{"message": "error setting actuator position", "error_code": 123, "system": "hydraulics"}
+//
+// you could call this function as
+//
+//	EnqueueWithArgs(timestamp, message, map[string]string{"error_code": "123", "system": "hydraulics"})
 func (ls *LogChannelStream) EnqueueWithArgs(timestamp NanosecondsUTC, message Log, args map[string]string) {
 	ls.enqueue(timestamp, message, args)
 }
 
+// LogStream returns a LogChannelStream for the specified channel name.
+// It is recommended to use the channel name "logs".
 func (s *DatasetLogStream) LogStream(ch string) *LogChannelStream {
 	s.mu.Lock()
 	defer s.mu.Unlock()

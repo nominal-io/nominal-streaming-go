@@ -80,6 +80,9 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
+// NewClient creates a new Nominal Streaming client with the provided API key and options.
+// By default, it connects to the production Nominal API endpoint at https://api.gov.nominal.io/api
+// but this can be overridden using the WithBaseURL option.
 func NewClient(apiKey string, options ...Option) (*Client, error) {
 	client := &Client{
 		baseURL:   "https://api.gov.nominal.io/api",
@@ -95,6 +98,10 @@ func NewClient(apiKey string, options ...Option) (*Client, error) {
 	return client, nil
 }
 
+// NewDatasetStream creates a new DatasetStream for sending time-series data.
+// By default, the batcher flushes when it accumulates 65,536 data points or
+// every 500 milliseconds, whichever comes first. These settings can be adjusted
+// via DatasetStreamOption parameters.
 func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, options ...DatasetStreamOption) (*DatasetStream, <-chan error, error) {
 	var rid rids.NominalDataSourceOrDatasetRid
 	if err := rid.UnmarshalText([]byte(datasetRID)); err != nil {
@@ -128,6 +135,12 @@ func (c *Client) NewDatasetStream(ctx context.Context, datasetRID string, option
 	return stream, batcher.errors, nil
 }
 
+// NewDatasetLogStream creates a new DatasetLogStream for sending log data.
+// Logs differ from regular data streams in that each log entry can have its own
+// set of key-value pairs (arguments) rather than static tags per channel.
+// By default, the log batcher flushes when it accumulates 4096 log entries or
+// every 500 milliseconds, whichever comes first. These settings can be adjusted
+// via DatasetLogStreamOption parameters.
 func (c *Client) NewDatasetLogStream(ctx context.Context, datasetRID string, options ...DatasetLogStreamOption) (*DatasetLogStream, <-chan error, error) {
 	var rid rids.NominalDataSourceOrDatasetRid
 	if err := rid.UnmarshalText([]byte(datasetRID)); err != nil {
@@ -138,7 +151,7 @@ func (c *Client) NewDatasetLogStream(ctx context.Context, datasetRID string, opt
 	if err != nil {
 		return nil, nil, err
 	}
-	logBatcher := newLogBatcher(ctx, apiClient, rid, 65_536, 500*time.Millisecond)
+	logBatcher := newLogBatcher(ctx, apiClient, rid, 4_096, 500*time.Millisecond)
 
 	stream := &DatasetLogStream{
 		datasetRID: datasetRID,
