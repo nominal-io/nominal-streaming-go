@@ -430,7 +430,6 @@ func (b *batcher) flushLocked() {
 }
 
 func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) error {
-	defer b.wg.Done()
 
 	series := make([]*pb.Series, 0, len(floatBatches)+len(intBatches)+len(stringBatches)+len(floatArrayBatches)+len(stringArrayBatches))
 
