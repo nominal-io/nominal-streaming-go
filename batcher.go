@@ -17,38 +17,38 @@ import (
 type channelName string
 
 type floatBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []float64         `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []float64
 }
 
 type intBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []int64           `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []int64
 }
 
 type stringBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     []string          `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     []string
 }
 
 type floatArrayBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     [][]float64       `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     [][]float64
 }
 
 type stringArrayBatch struct {
-	Channel    channelName       `json:"channel"`
-	Tags       map[string]string `json:"tags"`
-	Timestamps []NanosecondsUTC  `json:"timestamps"`
-	Values     [][]string        `json:"values"`
+	Channel    channelName
+	Tags       map[string]string
+	Timestamps []NanosecondsUTC
+	Values     [][]string
 }
 
 // channelReferenceKey is a lightweight key for map lookups (channel name + tags hash).
@@ -421,45 +421,66 @@ func (b *batcher) flushLocked() {
 	b.totalPoints = 0
 
 	b.wg.Add(1)
-	go b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+	go func() {
+		defer b.wg.Done()
+		if err := b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches); err != nil {
+			b.reportError(err)
+		}
+	}()
 }
 
-func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) {
-	defer b.wg.Done()
+func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) error {
 
 	series := make([]*pb.Series, 0, len(floatBatches)+len(intBatches)+len(stringBatches)+len(floatArrayBatches)+len(stringArrayBatches))
 
 	for _, batch := range floatBatches {
-		series = append(series, convertFloatBatchToProto(batch))
+		s, err := convertFloatBatchToProto(batch)
+		if err != nil {
+			return fmt.Errorf("failed to convert float batch: %w", err)
+		}
+		series = append(series, s)
 	}
 
 	for _, batch := range intBatches {
-		series = append(series, convertIntBatchToProto(batch))
+		s, err := convertIntBatchToProto(batch)
+		if err != nil {
+			return fmt.Errorf("failed to convert int batch: %w", err)
+		}
+		series = append(series, s)
 	}
 
 	for _, batch := range stringBatches {
-		series = append(series, convertStringBatchToProto(batch))
+		s, err := convertStringBatchToProto(batch)
+		if err != nil {
+			return fmt.Errorf("failed to convert string batch: %w", err)
+		}
+		series = append(series, s)
 	}
 
 	for _, batch := range floatArrayBatches {
-		series = append(series, convertFloatArrayBatchToProto(batch))
+		s, err := convertFloatArrayBatchToProto(batch)
+		if err != nil {
+			return fmt.Errorf("failed to convert float array batch: %w", err)
+		}
+		series = append(series, s)
 	}
 
 	for _, batch := range stringArrayBatches {
-		series = append(series, convertStringArrayBatchToProto(batch))
+		s, err := convertStringArrayBatchToProto(batch)
+		if err != nil {
+			return fmt.Errorf("failed to convert string array batch: %w", err)
+		}
+		series = append(series, s)
 	}
 
-	if err := b.sendToNominal(series); err != nil {
-		b.reportError(fmt.Errorf("failed to send batch: %w", err))
-	}
-}
-
-func (b *batcher) sendToNominal(series []*pb.Series) error {
 	request := &pb.WriteRequestNominal{
 		Series: series,
 	}
 
-	return b.apiClient.writeNominalData(b.ctx, b.datasetRID, request)
+	if err := b.apiClient.writeNominalData(b.ctx, b.datasetRID, request); err != nil {
+		return fmt.Errorf("failed to send batch: %w", err)
+	}
+	return nil
 }
 
 func hashTags(tags map[string]string) string {
@@ -483,7 +504,11 @@ func hashTags(tags map[string]string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func convertFloatBatchToProto(batch floatBatch) *pb.Series {
+func convertFloatBatchToProto(batch floatBatch) (*pb.Series, error) {
+	if len(batch.Timestamps) != len(batch.Values) {
+		return nil, fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+	}
+
 	points := make([]*pb.DoublePoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
 		points[i] = &pb.DoublePoint{
@@ -500,10 +525,14 @@ func convertFloatBatchToProto(batch floatBatch) *pb.Series {
 				DoublePoints: &pb.DoublePoints{Points: points},
 			},
 		},
-	}
+	}, nil
 }
 
-func convertIntBatchToProto(batch intBatch) *pb.Series {
+func convertIntBatchToProto(batch intBatch) (*pb.Series, error) {
+	if len(batch.Timestamps) != len(batch.Values) {
+		return nil, fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+	}
+
 	points := make([]*pb.IntegerPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
 		points[i] = &pb.IntegerPoint{
@@ -520,10 +549,14 @@ func convertIntBatchToProto(batch intBatch) *pb.Series {
 				IntegerPoints: &pb.IntegerPoints{Points: points},
 			},
 		},
-	}
+	}, nil
 }
 
-func convertStringBatchToProto(batch stringBatch) *pb.Series {
+func convertStringBatchToProto(batch stringBatch) (*pb.Series, error) {
+	if len(batch.Timestamps) != len(batch.Values) {
+		return nil, fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+	}
+
 	points := make([]*pb.StringPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
 		points[i] = &pb.StringPoint{
@@ -540,10 +573,14 @@ func convertStringBatchToProto(batch stringBatch) *pb.Series {
 				StringPoints: &pb.StringPoints{Points: points},
 			},
 		},
-	}
+	}, nil
 }
 
-func convertFloatArrayBatchToProto(batch floatArrayBatch) *pb.Series {
+func convertFloatArrayBatchToProto(batch floatArrayBatch) (*pb.Series, error) {
+	if len(batch.Timestamps) != len(batch.Values) {
+		return nil, fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+	}
+
 	points := make([]*pb.DoubleArrayPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
 		points[i] = &pb.DoubleArrayPoint{
@@ -564,10 +601,14 @@ func convertFloatArrayBatchToProto(batch floatArrayBatch) *pb.Series {
 				},
 			},
 		},
-	}
+	}, nil
 }
 
-func convertStringArrayBatchToProto(batch stringArrayBatch) *pb.Series {
+func convertStringArrayBatchToProto(batch stringArrayBatch) (*pb.Series, error) {
+	if len(batch.Timestamps) != len(batch.Values) {
+		return nil, fmt.Errorf("timestamp/value length mismatch: %d timestamps, %d values", len(batch.Timestamps), len(batch.Values))
+	}
+
 	points := make([]*pb.StringArrayPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
 		points[i] = &pb.StringArrayPoint{
@@ -588,7 +629,7 @@ func convertStringArrayBatchToProto(batch stringArrayBatch) *pb.Series {
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 // nanosecondsToTimestampProto converts nanoseconds to protobuf Timestamp.
