@@ -167,6 +167,100 @@ func TestStream_BatchingByTimeThreshold(t *testing.T) {
 	time.Sleep(6 * time.Second)
 }
 
+func TestStream_WithFlushInterval_CustomTiming(t *testing.T) {
+	// This test validates that WithFlushInterval actually changes the flush timing
+	var flushCount atomic.Int32
+
+	// Create a mock server that counts requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flushCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("test-key", WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	datasetRID := "ri.nominal.main.dataset.test"
+
+	// Create stream with a short flush interval (50ms instead of default 500ms)
+	customFlushInterval := 50 * time.Millisecond
+	stream, _, err := client.NewDatasetStream(
+		context.Background(),
+		datasetRID,
+		WithFlushInterval(customFlushInterval),
+	)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	defer stream.Close()
+
+	// Send a single data point
+	cs := stream.FloatStream("test_channel")
+	cs.Enqueue(time.Now().UnixNano(), 42.0)
+
+	// Wait slightly longer than the custom flush interval
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify data was flushed (should happen within ~50ms, not 500ms)
+	if count := flushCount.Load(); count < 1 {
+		t.Errorf("expected at least 1 flush within 100ms with 50ms flush interval, got %d", count)
+	}
+}
+
+func TestStream_WithBatchSize_CustomSize(t *testing.T) {
+	// This test validates that WithBatchSize actually changes the batch size threshold
+	var flushCount atomic.Int32
+
+	// Create a mock server that counts requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flushCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("test-key", WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	datasetRID := "ri.nominal.main.dataset.test"
+
+	// Create stream with a small batch size (10 points instead of default 65,536)
+	customBatchSize := 10
+	stream, _, err := client.NewDatasetStream(
+		context.Background(),
+		datasetRID,
+		WithBatchSize(customBatchSize),
+		WithFlushInterval(10*time.Second), // Long interval so we test size-based flush
+	)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	defer stream.Close()
+
+	// Send exactly the batch size number of points
+	cs := stream.FloatStream("test_channel")
+	baseTime := time.Now().UnixNano()
+	for i := 0; i < customBatchSize; i++ {
+		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
+	}
+
+	// Give a short time for the size-triggered flush to occur
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify data was flushed due to batch size being reached
+	if count := flushCount.Load(); count < 1 {
+		t.Errorf("expected at least 1 flush when batch size reached, got %d", count)
+	}
+}
+
 func TestStream_MixedDataTypes(t *testing.T) {
 	client, err := NewClient("test-key")
 	if err != nil {

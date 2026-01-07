@@ -18,8 +18,11 @@ type DatasetLogStream struct {
 	logStreams map[channelReferenceKey]*LogChannelStream
 }
 
+// DatasetLogStreamOption is a functional option for configuring a DatasetLogStream.
 type DatasetLogStreamOption func(*DatasetLogStream) error
 
+// WithLogBatchSize sets the number of log entries that triggers an automatic flush.
+// Default is 4,096 entries.
 func WithLogBatchSize(size int) DatasetLogStreamOption {
 	return func(s *DatasetLogStream) error {
 		s.batcher.flushSize = size
@@ -27,6 +30,9 @@ func WithLogBatchSize(size int) DatasetLogStreamOption {
 	}
 }
 
+// WithLogFlushInterval sets the maximum time between automatic flushes.
+// Log data will be flushed when this interval elapses, even if the batch size
+// has not been reached. Default is 500 milliseconds.
 func WithLogFlushInterval(interval time.Duration) DatasetLogStreamOption {
 	return func(s *DatasetLogStream) error {
 		s.batcher.flushPeriod = interval
