@@ -18,8 +18,11 @@ type DatasetStream struct {
 	stringArrayStreams map[channelReferenceKey]*ChannelStream[[]string]
 }
 
+// DatasetStreamOption is a functional option for configuring a DatasetStream.
 type DatasetStreamOption func(*DatasetStream) error
 
+// WithBatchSize sets the number of data points that triggers an automatic flush.
+// Default is 65,536 points.
 func WithBatchSize(size int) DatasetStreamOption {
 	return func(s *DatasetStream) error {
 		s.batcher.flushSize = size
@@ -27,6 +30,9 @@ func WithBatchSize(size int) DatasetStreamOption {
 	}
 }
 
+// WithFlushInterval sets the maximum time between automatic flushes.
+// Data will be flushed when this interval elapses, even if the batch size
+// has not been reached. Default is 500 milliseconds.
 func WithFlushInterval(interval time.Duration) DatasetStreamOption {
 	return func(s *DatasetStream) error {
 		s.batcher.flushPeriod = interval
