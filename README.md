@@ -58,7 +58,7 @@ func main() {
     // Closing the stream blocks until all requests have been sent to Nominal
     defer ds.Close()
 
-    // Handle errors from the stream asynchronously
+    // IMPORTANT: Always drain the error channel to prevent backpressure
     go func() {
         for err := range errCh {
             log.Printf("Stream error: %v", err)
@@ -87,3 +87,20 @@ func main() {
     }))
 }
 ```
+
+## Configuration Options
+
+```go
+ds, errCh, _ := client.NewDatasetStream(
+    ctx,
+    datasetRID,
+    nominal.WithFlushInterval(time.Second),  // Time between flushes (default: 500ms)
+    nominal.WithBatchSize(10_000),            // Points before size-triggered flush (default: 65,536)
+)
+```
+
+## Notes
+
+- **Error channel**: Always drain the error channel in a goroutine. Errors are reported asynchronously and not draining can cause internal buffer pressure.
+- **Float values**: `NaN` and `Inf` values are not supported and will result in an error.
+- **Backpressure**: If you see log messages like `"flush skipped due to backpressure"`, the server is responding slower than your flush rate. Data is re-queued and not lost, but consider increasing your flush interval.
