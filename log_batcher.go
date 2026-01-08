@@ -62,7 +62,7 @@ func newLogBatcher(
 		closeChan:   make(chan struct{}),
 		flushSize:   flushSize,
 		flushPeriod: flushPeriod,
-		errors:      make(chan error, 100),
+		errors:      make(chan error, 256), // Increased from 100 to handle burst errors
 		ctx:         ctx,
 		apiClient:   apiClient,
 		datasetRID:  datasetRID,
