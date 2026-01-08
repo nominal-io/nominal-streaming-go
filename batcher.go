@@ -94,9 +94,9 @@ type stringArrayBuffer struct {
 	values     [][]string
 }
 
-// maxConcurrentFlushes limits the number of concurrent HTTP requests to prevent
+// defaultMaxConcurrentFlushes limits the number of concurrent HTTP requests to prevent
 // unbounded goroutine accumulation when the server is slow or failing.
-const maxConcurrentFlushes = 10
+const defaultMaxConcurrentFlushes = 10
 
 type batcher struct {
 	closeChan   chan struct{}
@@ -110,7 +110,8 @@ type batcher struct {
 	closed   bool
 
 	// Concurrency control for flush goroutines
-	flushSem chan struct{}
+	maxConcurrentFlushes int
+	flushSem             chan struct{}
 
 	// API client
 	ctx        context.Context
@@ -134,19 +135,20 @@ func newBatcher(
 	flushPeriod time.Duration,
 ) *batcher {
 	return &batcher{
-		closeChan:          make(chan struct{}),
-		flushSize:          flushSize,
-		flushPeriod:        flushPeriod,
-		errors:             make(chan error, 256), // Increased from 100 to handle burst errors
-		flushSem:           make(chan struct{}, maxConcurrentFlushes),
-		ctx:                ctx,
-		apiClient:          apiClient,
-		datasetRID:         datasetRID,
-		floatBuffers:       make(map[channelReferenceKey]*floatBuffer),
-		intBuffers:         make(map[channelReferenceKey]*intBuffer),
-		stringBuffers:      make(map[channelReferenceKey]*stringBuffer),
-		floatArrayBuffers:  make(map[channelReferenceKey]*floatArrayBuffer),
-		stringArrayBuffers: make(map[channelReferenceKey]*stringArrayBuffer),
+		closeChan:            make(chan struct{}),
+		flushSize:            flushSize,
+		flushPeriod:          flushPeriod,
+		errors:               make(chan error, 256), // Increased from 100 to handle burst errors
+		maxConcurrentFlushes: defaultMaxConcurrentFlushes,
+		flushSem:             make(chan struct{}, defaultMaxConcurrentFlushes),
+		ctx:                  ctx,
+		apiClient:            apiClient,
+		datasetRID:           datasetRID,
+		floatBuffers:         make(map[channelReferenceKey]*floatBuffer),
+		intBuffers:           make(map[channelReferenceKey]*intBuffer),
+		stringBuffers:        make(map[channelReferenceKey]*stringBuffer),
+		floatArrayBuffers:    make(map[channelReferenceKey]*floatArrayBuffer),
+		stringArrayBuffers:   make(map[channelReferenceKey]*stringArrayBuffer),
 	}
 }
 
@@ -444,7 +446,7 @@ func (b *batcher) flushLocked() {
 	default:
 		// Too many concurrent flushes - this indicates backpressure
 		// Log warning but don't lose the data - it will be retried on next flush
-		log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes in progress)", maxConcurrentFlushes)
+		log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes in progress)", b.maxConcurrentFlushes)
 		// Re-add the batches back to the buffers
 		b.reAddBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
 	}

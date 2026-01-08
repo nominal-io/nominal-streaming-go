@@ -73,12 +73,54 @@ func TestConcurrentFlushLimit_EnforcesMax(t *testing.T) {
 	stream.Close()
 
 	max := maxConcurrent.Load()
-	t.Logf("Max concurrent flush goroutines observed: %d (limit is %d)", max, maxConcurrentFlushes)
+	t.Logf("Max concurrent flush goroutines observed: %d (limit is %d)", max, defaultMaxConcurrentFlushes)
 
 	// Should never exceed the limit
-	if max > int32(maxConcurrentFlushes) {
-		t.Errorf("exceeded max concurrent flushes: got %d, max allowed %d", max, maxConcurrentFlushes)
+	if max > int32(defaultMaxConcurrentFlushes) {
+		t.Errorf("exceeded max concurrent flushes: got %d, max allowed %d", max, defaultMaxConcurrentFlushes)
 	}
+}
+
+// TestConcurrentFlushLimit_Configurable verifies the limit can be configured.
+func TestConcurrentFlushLimit_Configurable(t *testing.T) {
+	var maxConcurrent atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		current := maxConcurrent.Add(1)
+		defer maxConcurrent.Add(-1)
+
+		// Track max (simplified)
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+		_ = current
+	}))
+	defer server.Close()
+
+	client, err := NewClient("test-key", WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	customLimit := 3
+	stream, _, err := client.NewDatasetStream(
+		context.Background(),
+		"ri.nominal.main.dataset.test",
+		WithFlushInterval(10*time.Millisecond),
+		WithBatchSize(10000),
+		WithMaxConcurrentFlushes(customLimit),
+	)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+
+	// Verify the batcher has the custom limit
+	if stream.batcher.maxConcurrentFlushes != customLimit {
+		t.Errorf("maxConcurrentFlushes = %d, want %d", stream.batcher.maxConcurrentFlushes, customLimit)
+	}
+
+	stream.Close()
 }
 
 // =============================================================================

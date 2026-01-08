@@ -94,8 +94,9 @@ func main() {
 ds, errCh, _ := client.NewDatasetStream(
     ctx,
     datasetRID,
-    nominal.WithFlushInterval(time.Second),  // Time between flushes (default: 500ms)
-    nominal.WithBatchSize(10_000),            // Points before size-triggered flush (default: 65,536)
+    nominal.WithFlushInterval(time.Second),      // Time between flushes (default: 500ms)
+    nominal.WithBatchSize(100_000),              // Points before size-triggered flush (default: 65,536)
+    nominal.WithMaxConcurrentFlushes(20),        // Max concurrent HTTP requests (default: 10)
 )
 ```
 
@@ -103,4 +104,4 @@ ds, errCh, _ := client.NewDatasetStream(
 
 - **Error channel**: Always drain the error channel in a goroutine. Errors are reported asynchronously and not draining can cause internal buffer pressure.
 - **Float values**: `NaN` and `Inf` values are not supported and will result in an error.
-- **Backpressure**: If you see log messages like `"flush skipped due to backpressure"`, the server is responding slower than your flush rate. Data is re-queued and not lost, but consider increasing your flush interval.
+- **Backpressure**: If you see log messages like `"flush skipped due to backpressure"`, the server is responding slower than your send rate. Data is re-queued and not lost. Consider increasing `WithBatchSize` to reduce request overhead, or increase `WithMaxConcurrentFlushes` if your network can handle more parallel requests.

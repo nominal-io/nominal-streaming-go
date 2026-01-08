@@ -34,6 +34,20 @@ func WithFlushInterval(interval time.Duration) DatasetStreamOption {
 	}
 }
 
+// WithMaxConcurrentFlushes sets the maximum number of concurrent HTTP requests
+// for sending batches. When this limit is reached, new flushes are skipped and
+// data is re-queued for the next flush attempt. Default is 10.
+func WithMaxConcurrentFlushes(n int) DatasetStreamOption {
+	return func(s *DatasetStream) error {
+		if n <= 0 {
+			n = 1
+		}
+		s.batcher.maxConcurrentFlushes = n
+		s.batcher.flushSem = make(chan struct{}, n)
+		return nil
+	}
+}
+
 // ChannelOption is a function that configures a channel stream.
 type ChannelOption func(*channelConfig)
 
