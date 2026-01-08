@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -93,6 +94,10 @@ type stringArrayBuffer struct {
 	values     [][]string
 }
 
+// maxConcurrentFlushes limits the number of concurrent HTTP requests to prevent
+// unbounded goroutine accumulation when the server is slow or failing.
+const maxConcurrentFlushes = 10
+
 type batcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -103,6 +108,9 @@ type batcher struct {
 	errorsMu sync.Mutex // Protects errors channel and closed flag
 	errors   chan error
 	closed   bool
+
+	// Concurrency control for flush goroutines
+	flushSem chan struct{}
 
 	// API client
 	ctx        context.Context
@@ -129,7 +137,8 @@ func newBatcher(
 		closeChan:          make(chan struct{}),
 		flushSize:          flushSize,
 		flushPeriod:        flushPeriod,
-		errors:             make(chan error, 100),
+		errors:             make(chan error, 256), // Increased from 100 to handle burst errors
+		flushSem:           make(chan struct{}, maxConcurrentFlushes),
 		ctx:                ctx,
 		apiClient:          apiClient,
 		datasetRID:         datasetRID,
@@ -420,13 +429,110 @@ func (b *batcher) flushLocked() {
 
 	b.totalPoints = 0
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		if err := b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches); err != nil {
-			b.reportError(err)
+	// Try to acquire semaphore (non-blocking to avoid deadlock while holding mu)
+	select {
+	case b.flushSem <- struct{}{}:
+		// Acquired semaphore, proceed with flush
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			defer func() { <-b.flushSem }() // Release semaphore when done
+			if err := b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches); err != nil {
+				b.reportError(err)
+			}
+		}()
+	default:
+		// Too many concurrent flushes - this indicates backpressure
+		// Log warning but don't lose the data - it will be retried on next flush
+		log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes in progress)", maxConcurrentFlushes)
+		// Re-add the batches back to the buffers
+		b.reAddBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+	}
+}
+
+// reAddBatches puts batches back into the buffers when a flush is skipped due to backpressure.
+// This ensures data is not lost and will be included in the next flush attempt.
+// Note: caller must hold b.mu lock.
+func (b *batcher) reAddBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) {
+	for _, batch := range floatBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.floatBuffers[key]
+		if !exists {
+			buffer = &floatBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]float64, 0),
+			}
+			b.floatBuffers[key] = buffer
 		}
-	}()
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range intBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.intBuffers[key]
+		if !exists {
+			buffer = &intBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]int64, 0),
+			}
+			b.intBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range stringBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.stringBuffers[key]
+		if !exists {
+			buffer = &stringBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]string, 0),
+			}
+			b.stringBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range floatArrayBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.floatArrayBuffers[key]
+		if !exists {
+			buffer = &floatArrayBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([][]float64, 0),
+			}
+			b.floatArrayBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range stringArrayBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.stringArrayBuffers[key]
+		if !exists {
+			buffer = &stringArrayBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([][]string, 0),
+			}
+			b.stringArrayBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
 }
 
 func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) error {
@@ -511,6 +617,13 @@ func convertFloatBatchToProto(batch floatBatch) (*pb.Series, error) {
 
 	points := make([]*pb.DoublePoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
+		// Validate float values - NaN and Inf are not valid for protobuf/JSON serialization
+		if math.IsNaN(batch.Values[i]) {
+			return nil, fmt.Errorf("invalid float value at index %d: NaN is not allowed", i)
+		}
+		if math.IsInf(batch.Values[i], 0) {
+			return nil, fmt.Errorf("invalid float value at index %d: Inf is not allowed", i)
+		}
 		points[i] = &pb.DoublePoint{
 			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
@@ -583,6 +696,15 @@ func convertFloatArrayBatchToProto(batch floatArrayBatch) (*pb.Series, error) {
 
 	points := make([]*pb.DoubleArrayPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
+		// Validate all float values in the array
+		for j, v := range batch.Values[i] {
+			if math.IsNaN(v) {
+				return nil, fmt.Errorf("invalid float array value at index [%d][%d]: NaN is not allowed", i, j)
+			}
+			if math.IsInf(v, 0) {
+				return nil, fmt.Errorf("invalid float array value at index [%d][%d]: Inf is not allowed", i, j)
+			}
+		}
 		points[i] = &pb.DoubleArrayPoint{
 			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
@@ -633,13 +755,22 @@ func convertStringArrayBatchToProto(batch stringArrayBatch) (*pb.Series, error) 
 }
 
 // nanosecondsToTimestampProto converts nanoseconds to protobuf Timestamp.
+// Handles negative timestamps correctly by ensuring Nanos is always in [0, 999999999].
 func nanosecondsToTimestampProto(nanos NanosecondsUTC) *timestamppb.Timestamp {
 	nanosInt64 := int64(nanos)
 	seconds := nanosInt64 / 1_000_000_000
-	remainingNanos := int32(nanosInt64 % 1_000_000_000)
+	remainingNanos := nanosInt64 % 1_000_000_000
+
+	// For negative timestamps, the modulo can be negative.
+	// Protobuf Timestamp requires Nanos to be in [0, 999999999].
+	// Adjust by borrowing from seconds.
+	if remainingNanos < 0 {
+		seconds--
+		remainingNanos += 1_000_000_000
+	}
 
 	return &timestamppb.Timestamp{
 		Seconds: seconds,
-		Nanos:   remainingNanos,
+		Nanos:   int32(remainingNanos),
 	}
 }

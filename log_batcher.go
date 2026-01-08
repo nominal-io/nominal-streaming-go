@@ -30,6 +30,9 @@ type logBuffer struct {
 	values     []logWithArgs
 }
 
+// maxConcurrentLogFlushes limits the number of concurrent HTTP requests for logs.
+const maxConcurrentLogFlushes = 10
+
 type logBatcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -40,6 +43,9 @@ type logBatcher struct {
 	errorsMu sync.Mutex
 	errors   chan error
 	closed   bool
+
+	// Concurrency control for flush goroutines
+	flushSem chan struct{}
 
 	// API client
 	ctx        context.Context
@@ -62,7 +68,8 @@ func newLogBatcher(
 		closeChan:   make(chan struct{}),
 		flushSize:   flushSize,
 		flushPeriod: flushPeriod,
-		errors:      make(chan error, 100),
+		errors:      make(chan error, 256), // Increased from 100 to handle burst errors
+		flushSem:    make(chan struct{}, maxConcurrentLogFlushes),
 		ctx:         ctx,
 		apiClient:   apiClient,
 		datasetRID:  datasetRID,
@@ -94,6 +101,9 @@ func (b *logBatcher) close() error {
 	return nil
 }
 
+// reportError sends an error to the errors channel without blocking.
+// If the channel is full, it attempts to drop the oldest error to make room for the new one.
+// Dropped errors are logged as warnings.
 func (b *logBatcher) reportError(err error) {
 	b.errorsMu.Lock()
 	defer b.errorsMu.Unlock()
@@ -102,20 +112,26 @@ func (b *logBatcher) reportError(err error) {
 		return
 	}
 
+	// Try to send error (non-blocking)
 	select {
 	case b.errors <- err:
+		return // Success
 	default:
-		// Channel full, drop oldest error and log warning
-		select {
-		case <-b.errors:
-			log.Printf("Warning: Errors channel full, dropped oldest error to make room")
-		default:
-		}
-		select {
-		case b.errors <- err:
-		default:
-			log.Printf("Warning: Failed to report error after dropping oldest: %v", err)
-		}
+	}
+
+	// Channel is full - try to drop oldest error to make room
+	select {
+	case oldErr := <-b.errors:
+		log.Printf("nominal-streaming: dropped error (buffer full): %v", oldErr)
+	default:
+	}
+
+	// Try to send new error again
+	select {
+	case b.errors <- err:
+		return // Success
+	default:
+		log.Printf("nominal-streaming: dropped error (buffer full): %v", err)
 	}
 }
 
@@ -189,13 +205,43 @@ func (b *logBatcher) flushLocked() {
 
 	b.totalPoints = 0
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		if err := b.sendLogBatches(logBatches); err != nil {
-			b.reportError(err)
+	// Try to acquire semaphore (non-blocking to avoid deadlock while holding mu)
+	select {
+	case b.flushSem <- struct{}{}:
+		// Acquired semaphore, proceed with flush
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			defer func() { <-b.flushSem }() // Release semaphore when done
+			if err := b.sendLogBatches(logBatches); err != nil {
+				b.reportError(err)
+			}
+		}()
+	default:
+		// Too many concurrent flushes - this indicates backpressure
+		log.Printf("nominal-streaming: log flush skipped due to backpressure (%d concurrent flushes in progress)", maxConcurrentLogFlushes)
+		// Re-add the batches back to the buffers
+		b.reAddLogBatches(logBatches)
+	}
+}
+
+// reAddLogBatches puts log batches back into the buffers when a flush is skipped due to backpressure.
+// Note: caller must hold b.mu lock.
+func (b *logBatcher) reAddLogBatches(batches []logBatch) {
+	for _, batch := range batches {
+		buffer, exists := b.logBuffers[batch.Channel]
+		if !exists {
+			buffer = &logBuffer{
+				channel:    batch.Channel,
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]logWithArgs, 0),
+			}
+			b.logBuffers[batch.Channel] = buffer
 		}
-	}()
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
 }
 
 func (b *logBatcher) sendLogBatches(batches []logBatch) error {
