@@ -94,6 +94,15 @@ type stringArrayBuffer struct {
 	values     [][]string
 }
 
+// defaultMaxConcurrentFlushes limits the number of concurrent HTTP requests to prevent
+// unbounded goroutine accumulation when the server is slow or failing.
+const defaultMaxConcurrentFlushes = 10
+
+// defaultMaxBufferPoints is the maximum number of points to buffer before dropping oldest.
+// This prevents unbounded memory growth under sustained backpressure.
+// Default: 1,000,000 points (~16 MB for floats, ~30s at 60Hz × 500 channels)
+const defaultMaxBufferPoints = 1_000_000
+
 type batcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -104,6 +113,14 @@ type batcher struct {
 	errorsMu sync.Mutex // Protects errors channel and closed flag
 	errors   chan error
 	closed   bool
+
+	// Concurrency control for flush goroutines
+	maxConcurrentFlushes int
+	flushSem             chan struct{}
+
+	// Backpressure handling
+	backpressurePolicy BackpressurePolicy
+	maxBufferPoints    int
 
 	// API client
 	ctx        context.Context
@@ -127,18 +144,22 @@ func newBatcher(
 	flushPeriod time.Duration,
 ) *batcher {
 	return &batcher{
-		closeChan:          make(chan struct{}),
-		flushSize:          flushSize,
-		flushPeriod:        flushPeriod,
-		errors:             make(chan error, 256), // Increased from 100 to handle burst errors
-		ctx:                ctx,
-		apiClient:          apiClient,
-		datasetRID:         datasetRID,
-		floatBuffers:       make(map[channelReferenceKey]*floatBuffer),
-		intBuffers:         make(map[channelReferenceKey]*intBuffer),
-		stringBuffers:      make(map[channelReferenceKey]*stringBuffer),
-		floatArrayBuffers:  make(map[channelReferenceKey]*floatArrayBuffer),
-		stringArrayBuffers: make(map[channelReferenceKey]*stringArrayBuffer),
+		closeChan:            make(chan struct{}),
+		flushSize:            flushSize,
+		flushPeriod:          flushPeriod,
+		errors:               make(chan error, 256), // Increased from 100 to handle burst errors
+		maxConcurrentFlushes: defaultMaxConcurrentFlushes,
+		flushSem:             make(chan struct{}, defaultMaxConcurrentFlushes),
+		backpressurePolicy:   BackpressureRequeue,
+		maxBufferPoints:      defaultMaxBufferPoints,
+		ctx:                  ctx,
+		apiClient:            apiClient,
+		datasetRID:           datasetRID,
+		floatBuffers:         make(map[channelReferenceKey]*floatBuffer),
+		intBuffers:           make(map[channelReferenceKey]*intBuffer),
+		stringBuffers:        make(map[channelReferenceKey]*stringBuffer),
+		floatArrayBuffers:    make(map[channelReferenceKey]*floatArrayBuffer),
+		stringArrayBuffers:   make(map[channelReferenceKey]*stringArrayBuffer),
 	}
 }
 
@@ -421,13 +442,247 @@ func (b *batcher) flushLocked() {
 
 	b.totalPoints = 0
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		if err := b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches); err != nil {
-			b.reportError(err)
+	// Try to acquire semaphore (non-blocking to avoid deadlock while holding mu)
+	select {
+	case b.flushSem <- struct{}{}:
+		// Acquired semaphore, proceed with flush
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			defer func() { <-b.flushSem }() // Release semaphore when done
+			if err := b.sendBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches); err != nil {
+				b.reportError(err)
+			}
+		}()
+	default:
+		// Too many concurrent flushes - this indicates backpressure
+		batchPoints := countBatchPoints(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+
+		switch b.backpressurePolicy {
+		case BackpressureDropBatch:
+			log.Printf("nominal-streaming: flush skipped due to backpressure, dropped batch of %d points (policy: DropBatch)", batchPoints)
+			// Data is intentionally dropped
+
+		case BackpressureRequeue:
+			fallthrough
+		default:
+			log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes), re-queued %d points", b.maxConcurrentFlushes, batchPoints)
+			// Re-add the batches back to the buffers
+			b.reAddBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+			// Check for buffer overflow and drop oldest if needed
+			b.enforceBufferLimitLocked()
 		}
-	}()
+	}
+}
+
+// countBatchPoints counts total points across all batch types.
+func countBatchPoints(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) int {
+	total := 0
+	for _, b := range floatBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range intBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range stringBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range floatArrayBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range stringArrayBatches {
+		total += len(b.Timestamps)
+	}
+	return total
+}
+
+// reAddBatches puts batches back into the buffers when a flush is skipped due to backpressure.
+// This ensures data is not lost and will be included in the next flush attempt.
+// Note: caller must hold b.mu lock.
+func (b *batcher) reAddBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) {
+	for _, batch := range floatBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.floatBuffers[key]
+		if !exists {
+			buffer = &floatBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]float64, 0),
+			}
+			b.floatBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range intBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.intBuffers[key]
+		if !exists {
+			buffer = &intBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]int64, 0),
+			}
+			b.intBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range stringBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.stringBuffers[key]
+		if !exists {
+			buffer = &stringBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]string, 0),
+			}
+			b.stringBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range floatArrayBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.floatArrayBuffers[key]
+		if !exists {
+			buffer = &floatArrayBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([][]float64, 0),
+			}
+			b.floatArrayBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+
+	for _, batch := range stringArrayBatches {
+		key := channelReferenceKey{channel: batch.Channel, tagsHash: hashTags(batch.Tags)}
+		buffer, exists := b.stringArrayBuffers[key]
+		if !exists {
+			buffer = &stringArrayBuffer{
+				ref:        channelReference{channelReferenceKey: key, tags: batch.Tags},
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([][]string, 0),
+			}
+			b.stringArrayBuffers[key] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+}
+
+// enforceBufferLimitLocked drops oldest points when buffer exceeds maxBufferPoints.
+// This prevents unbounded memory growth under sustained backpressure.
+// Note: caller must hold b.mu lock.
+func (b *batcher) enforceBufferLimitLocked() {
+	if b.maxBufferPoints <= 0 || b.totalPoints <= b.maxBufferPoints {
+		return
+	}
+
+	pointsToDrop := b.totalPoints - b.maxBufferPoints
+	droppedPoints := 0
+
+	// Drop oldest points from each buffer type
+	// We iterate through buffers and trim from the front (oldest data)
+
+	for key, buffer := range b.floatBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.floatBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.intBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.intBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.stringBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.stringBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.floatArrayBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.floatArrayBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.stringArrayBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.stringArrayBuffers, key)
+			}
+		}
+	}
+
+	if droppedPoints > 0 {
+		log.Printf("nominal-streaming: buffer limit exceeded (%d points), dropped %d oldest points", b.maxBufferPoints, droppedPoints)
+	}
 }
 
 func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) error {
