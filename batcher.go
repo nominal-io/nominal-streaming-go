@@ -98,6 +98,11 @@ type stringArrayBuffer struct {
 // unbounded goroutine accumulation when the server is slow or failing.
 const defaultMaxConcurrentFlushes = 10
 
+// defaultMaxBufferPoints is the maximum number of points to buffer before dropping oldest.
+// This prevents unbounded memory growth under sustained backpressure.
+// Default: 1,000,000 points (~16 MB for floats, ~30s at 60Hz × 500 channels)
+const defaultMaxBufferPoints = 1_000_000
+
 type batcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -112,6 +117,10 @@ type batcher struct {
 	// Concurrency control for flush goroutines
 	maxConcurrentFlushes int
 	flushSem             chan struct{}
+
+	// Backpressure handling
+	backpressurePolicy BackpressurePolicy
+	maxBufferPoints    int
 
 	// API client
 	ctx        context.Context
@@ -141,6 +150,8 @@ func newBatcher(
 		errors:               make(chan error, 256), // Increased from 100 to handle burst errors
 		maxConcurrentFlushes: defaultMaxConcurrentFlushes,
 		flushSem:             make(chan struct{}, defaultMaxConcurrentFlushes),
+		backpressurePolicy:   BackpressureRequeue, // Safe default: no data loss
+		maxBufferPoints:      defaultMaxBufferPoints,
 		ctx:                  ctx,
 		apiClient:            apiClient,
 		datasetRID:           datasetRID,
@@ -445,10 +456,22 @@ func (b *batcher) flushLocked() {
 		}()
 	default:
 		// Too many concurrent flushes - this indicates backpressure
-		// Log warning but don't lose the data - it will be retried on next flush
-		log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes in progress)", b.maxConcurrentFlushes)
-		// Re-add the batches back to the buffers
-		b.reAddBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+		batchPoints := countBatchPoints(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+
+		switch b.backpressurePolicy {
+		case BackpressureDropBatch:
+			log.Printf("nominal-streaming: flush skipped due to backpressure, dropped batch of %d points (policy: DropBatch)", batchPoints)
+			// Data is intentionally dropped
+
+		case BackpressureRequeue:
+			fallthrough
+		default:
+			log.Printf("nominal-streaming: flush skipped due to backpressure (%d concurrent flushes), re-queued %d points", b.maxConcurrentFlushes, batchPoints)
+			// Re-add the batches back to the buffers
+			b.reAddBatches(floatBatches, intBatches, stringBatches, floatArrayBatches, stringArrayBatches)
+			// Check for buffer overflow and drop oldest if needed
+			b.enforceBufferLimitLocked()
+		}
 	}
 }
 
@@ -534,6 +557,131 @@ func (b *batcher) reAddBatches(floatBatches []floatBatch, intBatches []intBatch,
 		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
 		buffer.values = append(batch.Values, buffer.values...)
 		b.totalPoints += len(batch.Timestamps)
+	}
+}
+
+// countBatchPoints counts total points across all batch types.
+func countBatchPoints(floatBatches []floatBatch, intBatches []intBatch, stringBatches []stringBatch, floatArrayBatches []floatArrayBatch, stringArrayBatches []stringArrayBatch) int {
+	total := 0
+	for _, b := range floatBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range intBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range stringBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range floatArrayBatches {
+		total += len(b.Timestamps)
+	}
+	for _, b := range stringArrayBatches {
+		total += len(b.Timestamps)
+	}
+	return total
+}
+
+// enforceBufferLimitLocked drops oldest points when buffer exceeds maxBufferPoints.
+// This prevents unbounded memory growth under sustained backpressure.
+// Note: caller must hold b.mu lock.
+func (b *batcher) enforceBufferLimitLocked() {
+	if b.maxBufferPoints <= 0 || b.totalPoints <= b.maxBufferPoints {
+		return
+	}
+
+	pointsToDrop := b.totalPoints - b.maxBufferPoints
+	droppedPoints := 0
+
+	// Drop oldest points from each buffer type proportionally
+	// We iterate through buffers and trim from the front (oldest data)
+
+	for key, buffer := range b.floatBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.floatBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.intBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.intBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.stringBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.stringBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.floatArrayBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.floatArrayBuffers, key)
+			}
+		}
+	}
+
+	for key, buffer := range b.stringArrayBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.stringArrayBuffers, key)
+			}
+		}
+	}
+
+	if droppedPoints > 0 {
+		log.Printf("nominal-streaming: buffer limit exceeded (%d points), dropped %d oldest points", b.maxBufferPoints, droppedPoints)
 	}
 }
 

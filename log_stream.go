@@ -34,6 +34,37 @@ func WithLogFlushInterval(interval time.Duration) DatasetLogStreamOption {
 	}
 }
 
+// WithLogMaxConcurrentFlushes sets the maximum number of concurrent HTTP requests
+// for sending log batches. Default is 10.
+func WithLogMaxConcurrentFlushes(n int) DatasetLogStreamOption {
+	return func(s *DatasetLogStream) error {
+		if n <= 0 {
+			n = 1
+		}
+		s.batcher.maxConcurrentFlushes = n
+		s.batcher.flushSem = make(chan struct{}, n)
+		return nil
+	}
+}
+
+// WithLogBackpressurePolicy sets how the log batcher handles backpressure.
+// See WithBackpressurePolicy for details.
+func WithLogBackpressurePolicy(policy BackpressurePolicy) DatasetLogStreamOption {
+	return func(s *DatasetLogStream) error {
+		s.batcher.backpressurePolicy = policy
+		return nil
+	}
+}
+
+// WithLogMaxBufferPoints sets the maximum number of log points to buffer before
+// dropping oldest data. Default is 1,000,000 points.
+func WithLogMaxBufferPoints(max int) DatasetLogStreamOption {
+	return func(s *DatasetLogStream) error {
+		s.batcher.maxBufferPoints = max
+		return nil
+	}
+}
+
 type LogChannelStream struct {
 	batcher *logBatcher
 	channel string

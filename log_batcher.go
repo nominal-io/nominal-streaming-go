@@ -30,9 +30,6 @@ type logBuffer struct {
 	values     []logWithArgs
 }
 
-// maxConcurrentLogFlushes limits the number of concurrent HTTP requests for logs.
-const maxConcurrentLogFlushes = 10
-
 type logBatcher struct {
 	closeChan   chan struct{}
 	wg          sync.WaitGroup
@@ -45,7 +42,12 @@ type logBatcher struct {
 	closed   bool
 
 	// Concurrency control for flush goroutines
-	flushSem chan struct{}
+	maxConcurrentFlushes int
+	flushSem             chan struct{}
+
+	// Backpressure handling
+	backpressurePolicy BackpressurePolicy
+	maxBufferPoints    int
 
 	// API client
 	ctx        context.Context
@@ -65,15 +67,18 @@ func newLogBatcher(
 	flushPeriod time.Duration,
 ) *logBatcher {
 	return &logBatcher{
-		closeChan:   make(chan struct{}),
-		flushSize:   flushSize,
-		flushPeriod: flushPeriod,
-		errors:      make(chan error, 256), // Increased from 100 to handle burst errors
-		flushSem:    make(chan struct{}, maxConcurrentLogFlushes),
-		ctx:         ctx,
-		apiClient:   apiClient,
-		datasetRID:  datasetRID,
-		logBuffers:  make(map[channelName]*logBuffer),
+		closeChan:            make(chan struct{}),
+		flushSize:            flushSize,
+		flushPeriod:          flushPeriod,
+		errors:               make(chan error, 256), // Increased from 100 to handle burst errors
+		maxConcurrentFlushes: defaultMaxConcurrentFlushes,
+		flushSem:             make(chan struct{}, defaultMaxConcurrentFlushes),
+		backpressurePolicy:   BackpressureRequeue,
+		maxBufferPoints:      defaultMaxBufferPoints,
+		ctx:                  ctx,
+		apiClient:            apiClient,
+		datasetRID:           datasetRID,
+		logBuffers:           make(map[channelName]*logBuffer),
 	}
 }
 
@@ -219,9 +224,22 @@ func (b *logBatcher) flushLocked() {
 		}()
 	default:
 		// Too many concurrent flushes - this indicates backpressure
-		log.Printf("nominal-streaming: log flush skipped due to backpressure (%d concurrent flushes in progress)", maxConcurrentLogFlushes)
-		// Re-add the batches back to the buffers
-		b.reAddLogBatches(logBatches)
+		batchPoints := countLogBatchPoints(logBatches)
+
+		switch b.backpressurePolicy {
+		case BackpressureDropBatch:
+			log.Printf("nominal-streaming: log flush skipped due to backpressure, dropped batch of %d points (policy: DropBatch)", batchPoints)
+			// Data is intentionally dropped
+
+		case BackpressureRequeue:
+			fallthrough
+		default:
+			log.Printf("nominal-streaming: log flush skipped due to backpressure (%d concurrent flushes), re-queued %d points", b.maxConcurrentFlushes, batchPoints)
+			// Re-add the batches back to the buffers
+			b.reAddLogBatches(logBatches)
+			// Check for buffer overflow and drop oldest if needed
+			b.enforceBufferLimitLocked()
+		}
 	}
 }
 
@@ -241,6 +259,47 @@ func (b *logBatcher) reAddLogBatches(batches []logBatch) {
 		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
 		buffer.values = append(batch.Values, buffer.values...)
 		b.totalPoints += len(batch.Timestamps)
+	}
+}
+
+// countLogBatchPoints counts total points across all log batches.
+func countLogBatchPoints(batches []logBatch) int {
+	total := 0
+	for _, b := range batches {
+		total += len(b.Timestamps)
+	}
+	return total
+}
+
+// enforceBufferLimitLocked drops oldest log points when buffer exceeds maxBufferPoints.
+// Note: caller must hold b.mu lock.
+func (b *logBatcher) enforceBufferLimitLocked() {
+	if b.maxBufferPoints <= 0 || b.totalPoints <= b.maxBufferPoints {
+		return
+	}
+
+	pointsToDrop := b.totalPoints - b.maxBufferPoints
+	droppedPoints := 0
+
+	for channel, buffer := range b.logBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.logBuffers, channel)
+			}
+		}
+	}
+
+	if droppedPoints > 0 {
+		log.Printf("nominal-streaming: log buffer limit exceeded (%d points), dropped %d oldest points", b.maxBufferPoints, droppedPoints)
 	}
 }
 

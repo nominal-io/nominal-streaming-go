@@ -243,6 +243,141 @@ func TestConvertFloatArrayBatchToProto_RejectsInvalidValues(t *testing.T) {
 }
 
 // =============================================================================
+// Tests for backpressure policy configuration
+// =============================================================================
+
+func TestBackpressurePolicy_Configurable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("test-key", WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test default policy
+	stream1, _, err := client.NewDatasetStream(context.Background(), "ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	if stream1.batcher.backpressurePolicy != BackpressureRequeue {
+		t.Errorf("default backpressurePolicy = %v, want BackpressureRequeue", stream1.batcher.backpressurePolicy)
+	}
+	stream1.Close()
+
+	// Test configuring DropBatch policy
+	stream2, _, err := client.NewDatasetStream(
+		context.Background(),
+		"ri.nominal.main.dataset.test",
+		WithBackpressurePolicy(BackpressureDropBatch),
+	)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	if stream2.batcher.backpressurePolicy != BackpressureDropBatch {
+		t.Errorf("backpressurePolicy = %v, want BackpressureDropBatch", stream2.batcher.backpressurePolicy)
+	}
+	stream2.Close()
+}
+
+func TestMaxBufferPoints_Configurable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{}"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("test-key", WithBaseURL(server.URL))
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	// Test default
+	stream1, _, err := client.NewDatasetStream(context.Background(), "ri.nominal.main.dataset.test")
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	if stream1.batcher.maxBufferPoints != defaultMaxBufferPoints {
+		t.Errorf("default maxBufferPoints = %d, want %d", stream1.batcher.maxBufferPoints, defaultMaxBufferPoints)
+	}
+	stream1.Close()
+
+	// Test custom value
+	customLimit := 50000
+	stream2, _, err := client.NewDatasetStream(
+		context.Background(),
+		"ri.nominal.main.dataset.test",
+		WithMaxBufferPoints(customLimit),
+	)
+	if err != nil {
+		t.Fatalf("failed to create stream: %v", err)
+	}
+	if stream2.batcher.maxBufferPoints != customLimit {
+		t.Errorf("maxBufferPoints = %d, want %d", stream2.batcher.maxBufferPoints, customLimit)
+	}
+	stream2.Close()
+}
+
+func TestEnforceBufferLimit_DropsOldestPoints(t *testing.T) {
+	// Create a batcher with a small buffer limit
+	b := &batcher{
+		maxBufferPoints: 5,
+		floatBuffers:    make(map[channelReferenceKey]*floatBuffer),
+		totalPoints:     0,
+	}
+
+	// Add 10 points - should trigger overflow handling when enforceBufferLimitLocked is called
+	key := channelReferenceKey{channel: "test", tagsHash: ""}
+	b.floatBuffers[key] = &floatBuffer{
+		ref:        channelReference{channelReferenceKey: key, tags: nil},
+		timestamps: []NanosecondsUTC{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		values:     []float64{1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0},
+	}
+	b.totalPoints = 10
+
+	// Enforce the limit
+	b.enforceBufferLimitLocked()
+
+	// Should have dropped 5 oldest points
+	if b.totalPoints != 5 {
+		t.Errorf("totalPoints = %d, want 5", b.totalPoints)
+	}
+
+	buffer := b.floatBuffers[key]
+	if len(buffer.timestamps) != 5 {
+		t.Errorf("buffer.timestamps length = %d, want 5", len(buffer.timestamps))
+	}
+
+	// Oldest points should be dropped, newest kept (6, 7, 8, 9, 10)
+	if buffer.timestamps[0] != 6 {
+		t.Errorf("first remaining timestamp = %d, want 6 (oldest dropped)", buffer.timestamps[0])
+	}
+	if buffer.values[0] != 6.0 {
+		t.Errorf("first remaining value = %f, want 6.0", buffer.values[0])
+	}
+}
+
+func TestCountBatchPoints(t *testing.T) {
+	floatBatches := []floatBatch{
+		{Timestamps: make([]NanosecondsUTC, 5)},
+		{Timestamps: make([]NanosecondsUTC, 3)},
+	}
+	intBatches := []intBatch{
+		{Timestamps: make([]NanosecondsUTC, 2)},
+	}
+
+	total := countBatchPoints(floatBatches, intBatches, nil, nil, nil)
+	if total != 10 {
+		t.Errorf("countBatchPoints = %d, want 10", total)
+	}
+}
+
+// =============================================================================
 // Tests for batch conversion edge cases
 // =============================================================================
 
