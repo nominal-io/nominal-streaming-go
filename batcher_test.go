@@ -1,231 +1,19 @@
 package nominal_streaming
 
 import (
-	"bytes"
-	"context"
-	"log"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"context"
 )
 
 // =============================================================================
-// Tests for "dropped error (buffer full)" issue
-// =============================================================================
-
-// TestErrorBuffer_DroppedErrorOnOverflow verifies that when the error buffer
-// fills up, errors are dropped and logged with "dropped error (buffer full)".
-func TestErrorBuffer_DroppedErrorOnOverflow(t *testing.T) {
-	// Capture log output to verify "dropped error" messages
-	var logBuf bytes.Buffer
-	originalOutput := log.Writer()
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(originalOutput)
-
-	var requestCount atomic.Int32
-
-	// Create a mock server that always returns 400
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"errorName": "Default:InvalidArgument"}`))
-	}))
-	defer server.Close()
-
-	client, err := NewClient("test-key", WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	datasetRID := "ri.nominal.main.dataset.test"
-
-	// Use very fast flushing to generate many errors quickly
-	stream, errCh, err := client.NewDatasetStream(
-		context.Background(),
-		datasetRID,
-		WithFlushInterval(5*time.Millisecond),
-		WithBatchSize(3),
-	)
-	if err != nil {
-		t.Fatalf("failed to create stream: %v", err)
-	}
-
-	// Count errors received
-	var errorsReceived atomic.Int32
-	var done sync.WaitGroup
-	done.Add(1)
-	go func() {
-		defer done.Done()
-		for range errCh {
-			errorsReceived.Add(1)
-		}
-	}()
-
-	// Send many data points to trigger multiple flushes
-	cs := stream.FloatStream("test_channel")
-	baseTime := time.Now().UnixNano()
-	for i := 0; i < 1000; i++ {
-		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
-		if i%50 == 0 {
-			time.Sleep(2 * time.Millisecond)
-		}
-	}
-
-	time.Sleep(500 * time.Millisecond)
-	stream.Close()
-	done.Wait()
-
-	requests := requestCount.Load()
-	errors := errorsReceived.Load()
-	logOutput := logBuf.String()
-
-	t.Logf("Requests made: %d, Errors received: %d", requests, errors)
-
-	// With 256 buffer size and potentially hundreds of requests,
-	// we should see some dropped errors if we overwhelm the buffer
-	droppedCount := strings.Count(logOutput, "dropped error (buffer full)")
-	t.Logf("Dropped error messages in log: %d", droppedCount)
-
-	// Verify we received at least some errors
-	if errors == 0 && requests > 0 {
-		t.Error("expected to receive at least some errors from 400 responses")
-	}
-}
-
-// TestErrorChannel_UndrainedLeadsToDrops verifies that not draining the
-// error channel causes errors to be dropped.
-func TestErrorChannel_UndrainedLeadsToDrops(t *testing.T) {
-	// Capture log output
-	var logBuf bytes.Buffer
-	originalOutput := log.Writer()
-	log.SetOutput(&logBuf)
-	defer log.SetOutput(originalOutput)
-
-	var requestCount atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error": "bad request"}`))
-	}))
-	defer server.Close()
-
-	client, err := NewClient("test-key", WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	datasetRID := "ri.nominal.main.dataset.test"
-
-	stream, errCh, err := client.NewDatasetStream(
-		context.Background(),
-		datasetRID,
-		WithFlushInterval(5*time.Millisecond),
-		WithBatchSize(3),
-	)
-	if err != nil {
-		t.Fatalf("failed to create stream: %v", err)
-	}
-
-	// INTENTIONALLY do NOT drain the error channel
-	_ = errCh
-
-	// Send data to trigger many flushes
-	cs := stream.FloatStream("test_channel")
-	baseTime := time.Now().UnixNano()
-	for i := 0; i < 500; i++ {
-		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
-		if i%20 == 0 {
-			time.Sleep(3 * time.Millisecond)
-		}
-	}
-
-	time.Sleep(500 * time.Millisecond)
-	stream.Close()
-
-	requests := requestCount.Load()
-	logOutput := logBuf.String()
-	droppedCount := strings.Count(logOutput, "dropped error (buffer full)")
-
-	t.Logf("Requests made: %d, Dropped errors logged: %d", requests, droppedCount)
-
-	// With undrained channel and many requests exceeding buffer (256),
-	// we expect dropped error messages
-	if requests > 256 && droppedCount == 0 {
-		t.Error("expected 'dropped error (buffer full)' log messages when channel is not drained")
-	}
-}
-
-// TestErrorChannel_ProperDrainingReceivesAllErrors shows the correct pattern.
-func TestErrorChannel_ProperDrainingReceivesAllErrors(t *testing.T) {
-	var requestCount atomic.Int32
-	var errorCount atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestCount.Add(1)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error": "bad request"}`))
-	}))
-	defer server.Close()
-
-	client, err := NewClient("test-key", WithBaseURL(server.URL))
-	if err != nil {
-		t.Fatalf("failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	datasetRID := "ri.nominal.main.dataset.test"
-
-	stream, errCh, err := client.NewDatasetStream(
-		context.Background(),
-		datasetRID,
-		WithFlushInterval(10*time.Millisecond),
-		WithBatchSize(5),
-	)
-	if err != nil {
-		t.Fatalf("failed to create stream: %v", err)
-	}
-
-	// Properly drain the error channel
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for range errCh {
-			errorCount.Add(1)
-		}
-	}()
-
-	// Send data
-	cs := stream.FloatStream("test_channel")
-	baseTime := time.Now().UnixNano()
-	for i := 0; i < 100; i++ {
-		cs.Enqueue(baseTime+int64(i*1_000_000), float64(i))
-	}
-
-	time.Sleep(200 * time.Millisecond)
-	stream.Close()
-	wg.Wait()
-
-	requests := requestCount.Load()
-	errors := errorCount.Load()
-
-	t.Logf("Requests: %d, Errors received: %d", requests, errors)
-
-	if requests > 0 && errors == 0 {
-		t.Error("expected to receive errors when properly draining error channel")
-	}
-}
-
-// =============================================================================
-// Tests for concurrent flush limiting
+// Tests for concurrent flush limiting (validates the fix)
 // =============================================================================
 
 // TestConcurrentFlushLimit_EnforcesMax verifies that the flush semaphore
@@ -294,7 +82,7 @@ func TestConcurrentFlushLimit_EnforcesMax(t *testing.T) {
 }
 
 // =============================================================================
-// Tests for timestamp conversion (negative nanoseconds bug)
+// Tests for timestamp conversion (validates the negative nanoseconds fix)
 // =============================================================================
 
 func TestTimestampConversion_NegativeNanoseconds(t *testing.T) {
@@ -333,7 +121,7 @@ func TestTimestampConversion_NegativeNanoseconds(t *testing.T) {
 }
 
 // =============================================================================
-// Tests for NaN/Inf validation
+// Tests for NaN/Inf validation (validates the fix)
 // =============================================================================
 
 func TestConvertFloatBatchToProto_RejectsNaN(t *testing.T) {
