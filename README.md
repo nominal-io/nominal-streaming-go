@@ -87,3 +87,8 @@ func main() {
     }))
 }
 ```
+
+## Notes
+
+- **Error channel**: Always drain the error channel in a goroutine. Errors are reported asynchronously and not draining can cause internal buffer pressure.
+- **Float values**: `NaN` and `Inf` values are not supported and will result in an error.
