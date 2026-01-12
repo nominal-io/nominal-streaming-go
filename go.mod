@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/nominal-io/nominal-api-go v0.0.0-20250821001851-419b2ae2d33d
+	github.com/nominal-io/nominal-api-go v0.0.0-20260106202330-55254926bf9a
 	github.com/palantir/go-metrics v1.1.1 // indirect
 	github.com/palantir/pkg v1.1.0 // indirect
 	github.com/palantir/pkg/bytesbuffers v1.2.0 // indirect
@@ -20,7 +20,7 @@ require (
 	github.com/palantir/pkg/retry v1.2.0 // indirect
 	github.com/palantir/pkg/rid v1.1.0 // indirect
 	github.com/palantir/pkg/safejson v1.1.0 // indirect
-	github.com/palantir/pkg/safelong v1.2.0 // indirect
+	github.com/palantir/pkg/safelong v1.2.0
 	github.com/palantir/pkg/safeyaml v1.1.0 // indirect
 	github.com/palantir/pkg/tlsconfig v1.3.0 // indirect
 	github.com/palantir/pkg/transform v1.1.0 // indirect
