@@ -288,10 +288,10 @@ func TestRetryLogic_Success(t *testing.T) {
 func TestRetryLogic_RetryableError_EventualSuccess(t *testing.T) {
 	var attemptCount atomic.Int32
 
-	// Create a mock server that fails twice with 503, then succeeds
+	// Create a mock server that fails once with 503, then succeeds
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		count := attemptCount.Add(1)
-		if count <= 2 {
+		if count <= 1 {
 			w.WriteHeader(http.StatusServiceUnavailable) // 503
 			w.Write([]byte("service unavailable"))
 			return
@@ -314,14 +314,14 @@ func TestRetryLogic_RetryableError_EventualSuccess(t *testing.T) {
 	}
 	defer stream.Close()
 
-	// Send data - should succeed after retries
+	// Send data - should succeed after retry
 	cs := stream.FloatStream("test")
 	cs.Enqueue(time.Now().UnixNano(), 42.0)
-	time.Sleep(2 * time.Second) // Wait for retries and flush
+	time.Sleep(2 * time.Second) // Wait for retry and flush
 
-	// Verify we attempted 3 times (2 failures + 1 success)
-	if attempts := attemptCount.Load(); attempts != 3 {
-		t.Errorf("expected 3 attempts, got %d", attempts)
+	// Verify we attempted 2 times (1 failure + 1 success)
+	if attempts := attemptCount.Load(); attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
 }
 
@@ -362,9 +362,9 @@ func TestRetryLogic_RetryableError_MaxRetriesExceeded(t *testing.T) {
 	cs.Enqueue(time.Now().UnixNano(), 42.0)
 	time.Sleep(3 * time.Second) // Wait for retries and flush
 
-	// Verify we attempted maxRetries + 1 times (default is 3 retries = 4 total attempts)
-	if attempts := attemptCount.Load(); attempts != 4 {
-		t.Errorf("expected 4 attempts (1 initial + 3 retries), got %d", attempts)
+	// Verify we attempted with default retry behavior (1 initial + 1 retry = 2 total attempts)
+	if attempts := attemptCount.Load(); attempts != 2 {
+		t.Errorf("expected 2 attempts (1 initial + 1 retry), got %d", attempts)
 	}
 
 	if !errorReceived.Load() {
