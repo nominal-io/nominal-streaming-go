@@ -37,6 +37,7 @@ func newNominalAPIClient(baseURL string, authToken string) (*nominalAPIClient, e
 	conjureClient, err := httpclient.NewClient(
 		httpclient.WithBaseURLs([]string{baseURL}),
 		httpclient.WithMiddleware(protobufContentTypeMiddleware()),
+		httpclient.WithMaxRetries(3), // 1 initial + 3 retries = 4 total attempts
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conjure client: %w", err)
