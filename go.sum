@@ -14,8 +14,8 @@ github.com/mattn/go-isatty v0.0.19 h1:JITubQf0MOLdlGRuRq+jtsDlekdYPia9ZFsB8h/APP
 github.com/mattn/go-isatty v0.0.19/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/nmiyake/pkg/dirs v1.0.0 h1:pYeIw1wH7jh5/ew8naGE4Q56byJG7Uyi8PwwhVe/MTg=
 github.com/nmiyake/pkg/dirs v1.0.0/go.mod h1:r6/PkZ3CA1szGfQkxcHheEjBWi6Zu6jLb+lQmRXEyvM=
-github.com/nominal-io/nominal-api-go v0.0.0-20250821001851-419b2ae2d33d h1:I0CH2GS6w27nmdOqIutzAb9FKwUb3qUo9tOoAKuilU4=
-github.com/nominal-io/nominal-api-go v0.0.0-20250821001851-419b2ae2d33d/go.mod h1:IPK8FcQ/30GN7rwy1roN/3FyeKbTL4Hl6BzgwPfqtqY=
+github.com/nominal-io/nominal-api-go v0.0.0-20260106202330-55254926bf9a h1:XosKIzycIHErmMFn0Zedf/Yz/ndlArADPKGEZUsy8wE=
+github.com/nominal-io/nominal-api-go v0.0.0-20260106202330-55254926bf9a/go.mod h1:IPK8FcQ/30GN7rwy1roN/3FyeKbTL4Hl6BzgwPfqtqY=
 github.com/openzipkin/zipkin-go v0.2.2 h1:nY8Hti+WKaP0cRsSeQ026wU03QsM762XBeCXBb9NAWI=
 github.com/openzipkin/zipkin-go v0.2.2/go.mod h1:NaW6tEwdmWMaCDZzg8sh+IBNOxHMPnhQw8ySjnjRyN4=
 github.com/palantir/conjure-go-runtime/v2 v2.97.0 h1:Fkow1nyazr1Gk4mvMRgNDO0ZAb8MWxlyCYEBhl1GBKc=
