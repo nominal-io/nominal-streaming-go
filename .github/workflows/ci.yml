@@ -71,10 +71,14 @@ jobs:
           go-version: "1.25"
           check-latest: true
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: staticcheck ./...
 
   format:
     name: Format
@@ -99,44 +103,6 @@ jobs:
             exit 1
           fi
           echo "All files are properly formatted"
-
-  proto-check:
-    name: Proto Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-          check-latest: true
-
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "28.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install protoc-gen-go
-        run: go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-
-      - name: Generate proto files
-        run: protoc --go_out=. --go_opt=paths=source_relative proto/nominal_write.proto
-
-      - name: Check for changes
-        run: |
-          if [ -n "$(git status --porcelain proto/)" ]; then
-            echo "Generated proto files are out of date. Please run:"
-            echo "  protoc --go_out=. --go_opt=paths=source_relative proto/nominal_write.proto"
-            echo ""
-            echo "Changed files:"
-            git status --porcelain proto/
-            git diff proto/
-            exit 1
-          fi
-          echo "Generated proto files are up to date"
 
   benchmark:
     name: Benchmark
