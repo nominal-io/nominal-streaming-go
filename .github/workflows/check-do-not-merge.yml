@@ -1,0 +1,21 @@
+name: Check 'do not merge' label
+
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+
+jobs:
+  check-do-not-merge-label:
+    name: Check 'do not merge' label
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'do not merge')
+    steps:
+      - name: Block merge
+        run: |
+          echo "### Merge Blocked" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR has the **do not merge** label." >> $GITHUB_STEP_SUMMARY
+          echo "Remove the label when you're ready to merge." >> $GITHUB_STEP_SUMMARY
+          echo ""
+          echo "PR contains 'do not merge' label"
+          exit 1
