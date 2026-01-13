@@ -88,6 +88,41 @@ func main() {
 }
 ```
 
+## Error Handling
+
+Errors from the API are wrapped in `NominalError` which exposes structured error information:
+
+```go
+go func() {
+    for err := range errCh {
+        if nomErr, ok := nominal.AsNominalError(err); ok {
+            fmt.Printf("Error: %s\n", nomErr.Name())        // e.g., "Scout:DatasetNotFound"
+            fmt.Printf("Code: %s\n", nomErr.Code())         // e.g., "NOT_FOUND"
+            fmt.Printf("Instance ID: %s\n", nomErr.InstanceID()) // UUID for support
+            fmt.Printf("HTTP Status: %d\n", nomErr.StatusCode()) // e.g., 404
+        }
+        
+        // Check if the error is retryable (transient)
+        if nominal.IsRetryable(err) {
+            // Implement retry logic
+        }
+    }
+}()
+```
+
+### Available Error Methods
+
+- `Code()` - Error category (e.g., `INVALID_ARGUMENT`, `NOT_FOUND`, `UNAUTHORIZED`)
+- `Name()` - Specific error type (e.g., `Scout:DatasetNotFound`)
+- `InstanceID()` - Unique identifier for this error occurrence (useful for support tickets)
+- `StatusCode()` - HTTP status code
+- `Parameters()` - Additional context parameters from the error
+
+### Helper Functions
+
+- `AsNominalError(err)` - Extract `NominalError` from an error chain
+- `IsRetryable(err)` - Check if the error is transient and may succeed on retry
+
 ## Notes
 
 - **Error channel**: Always drain the error channel in a goroutine. Errors are reported asynchronously and not draining can cause internal buffer pressure.
