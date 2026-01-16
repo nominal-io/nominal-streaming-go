@@ -34,6 +34,48 @@ func WithFlushInterval(interval time.Duration) DatasetStreamOption {
 	}
 }
 
+// WithMaxConcurrentFlushes sets the maximum number of concurrent HTTP requests
+// for sending batches. When this limit is reached, new flushes are handled
+// according to the backpressure policy. Default is 10.
+func WithMaxConcurrentFlushes(n int) DatasetStreamOption {
+	return func(s *DatasetStream) error {
+		if n <= 0 {
+			n = 1
+		}
+		s.batcher.maxConcurrentFlushes = n
+		s.batcher.flushSem = make(chan struct{}, n)
+		return nil
+	}
+}
+
+// WithBackpressurePolicy sets how the batcher handles backpressure when
+// the maximum concurrent flushes limit is reached.
+//
+// Options:
+//   - BackpressureRequeue (default): Re-queue data for the next flush attempt.
+//     Safe (no data loss) but can cause memory growth under sustained backpressure.
+//   - BackpressureDropBatch: Drop the entire batch when backpressure occurs.
+//     Prevents staleness but loses data. Use when freshness matters more than completeness.
+func WithBackpressurePolicy(policy BackpressurePolicy) DatasetStreamOption {
+	return func(s *DatasetStream) error {
+		s.batcher.backpressurePolicy = policy
+		return nil
+	}
+}
+
+// WithMaxBufferPoints sets the maximum number of data points to buffer before
+// dropping oldest data. This prevents unbounded memory growth under sustained backpressure.
+//
+// When the buffer exceeds this limit (after re-queuing), the oldest points are dropped.
+// Default is 1,000,000 points (~16 MB for floats, ~30 seconds at 60Hz × 500 channels).
+// Set to 0 to disable the limit (not recommended for production).
+func WithMaxBufferPoints(max int) DatasetStreamOption {
+	return func(s *DatasetStream) error {
+		s.batcher.maxBufferPoints = max
+		return nil
+	}
+}
+
 // ChannelOption is a function that configures a channel stream.
 type ChannelOption func(*channelConfig)
 

@@ -41,6 +41,14 @@ type logBatcher struct {
 	errors   chan error
 	closed   bool
 
+	// Concurrency control for flush goroutines
+	maxConcurrentFlushes int
+	flushSem             chan struct{}
+
+	// Backpressure handling
+	backpressurePolicy BackpressurePolicy
+	maxBufferPoints    int
+
 	// API client
 	ctx        context.Context
 	apiClient  *nominalAPIClient
@@ -59,14 +67,18 @@ func newLogBatcher(
 	flushPeriod time.Duration,
 ) *logBatcher {
 	return &logBatcher{
-		closeChan:   make(chan struct{}),
-		flushSize:   flushSize,
-		flushPeriod: flushPeriod,
-		errors:      make(chan error, 256), // Increased from 100 to handle burst errors
-		ctx:         ctx,
-		apiClient:   apiClient,
-		datasetRID:  datasetRID,
-		logBuffers:  make(map[channelName]*logBuffer),
+		closeChan:            make(chan struct{}),
+		flushSize:            flushSize,
+		flushPeriod:          flushPeriod,
+		errors:               make(chan error, 256), // Increased from 100 to handle burst errors
+		maxConcurrentFlushes: defaultMaxConcurrentFlushes,
+		flushSem:             make(chan struct{}, defaultMaxConcurrentFlushes),
+		backpressurePolicy:   BackpressureRequeue,
+		maxBufferPoints:      defaultMaxBufferPoints,
+		ctx:                  ctx,
+		apiClient:            apiClient,
+		datasetRID:           datasetRID,
+		logBuffers:           make(map[channelName]*logBuffer),
 	}
 }
 
@@ -189,13 +201,97 @@ func (b *logBatcher) flushLocked() {
 
 	b.totalPoints = 0
 
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		if err := b.sendLogBatches(logBatches); err != nil {
-			b.reportError(err)
+	// Try to acquire semaphore (non-blocking to avoid deadlock while holding mu)
+	select {
+	case b.flushSem <- struct{}{}:
+		// Acquired semaphore, proceed with flush
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			defer func() { <-b.flushSem }() // Release semaphore when done
+			if err := b.sendLogBatches(logBatches); err != nil {
+				b.reportError(err)
+			}
+		}()
+	default:
+		// Too many concurrent flushes - this indicates backpressure
+		batchPoints := countLogBatchPoints(logBatches)
+
+		switch b.backpressurePolicy {
+		case BackpressureDropBatch:
+			log.Printf("nominal-streaming: log flush skipped due to backpressure, dropped batch of %d points (policy: DropBatch)", batchPoints)
+			// Data is intentionally dropped
+
+		case BackpressureRequeue:
+			fallthrough
+		default:
+			log.Printf("nominal-streaming: log flush skipped due to backpressure (%d concurrent flushes), re-queued %d points", b.maxConcurrentFlushes, batchPoints)
+			// Re-add the batches back to the buffers
+			b.reAddLogBatches(logBatches)
+			// Check for buffer overflow and drop oldest if needed
+			b.enforceBufferLimitLocked()
 		}
-	}()
+	}
+}
+
+// countLogBatchPoints counts total points across all log batches.
+func countLogBatchPoints(batches []logBatch) int {
+	total := 0
+	for _, b := range batches {
+		total += len(b.Timestamps)
+	}
+	return total
+}
+
+// reAddLogBatches puts log batches back into the buffers when a flush is skipped due to backpressure.
+// Note: caller must hold b.mu lock.
+func (b *logBatcher) reAddLogBatches(batches []logBatch) {
+	for _, batch := range batches {
+		buffer, exists := b.logBuffers[batch.Channel]
+		if !exists {
+			buffer = &logBuffer{
+				channel:    batch.Channel,
+				timestamps: make([]NanosecondsUTC, 0),
+				values:     make([]logWithArgs, 0),
+			}
+			b.logBuffers[batch.Channel] = buffer
+		}
+		buffer.timestamps = append(batch.Timestamps, buffer.timestamps...)
+		buffer.values = append(batch.Values, buffer.values...)
+		b.totalPoints += len(batch.Timestamps)
+	}
+}
+
+// enforceBufferLimitLocked drops oldest log points when buffer exceeds maxBufferPoints.
+// Note: caller must hold b.mu lock.
+func (b *logBatcher) enforceBufferLimitLocked() {
+	if b.maxBufferPoints <= 0 || b.totalPoints <= b.maxBufferPoints {
+		return
+	}
+
+	pointsToDrop := b.totalPoints - b.maxBufferPoints
+	droppedPoints := 0
+
+	for channel, buffer := range b.logBuffers {
+		if pointsToDrop <= 0 {
+			break
+		}
+		if len(buffer.timestamps) > 0 {
+			toDrop := min(len(buffer.timestamps), pointsToDrop)
+			buffer.timestamps = buffer.timestamps[toDrop:]
+			buffer.values = buffer.values[toDrop:]
+			pointsToDrop -= toDrop
+			droppedPoints += toDrop
+			b.totalPoints -= toDrop
+			if len(buffer.timestamps) == 0 {
+				delete(b.logBuffers, channel)
+			}
+		}
+	}
+
+	if droppedPoints > 0 {
+		log.Printf("nominal-streaming: log buffer limit exceeded (%d points), dropped %d oldest points", b.maxBufferPoints, droppedPoints)
+	}
 }
 
 func (b *logBatcher) sendLogBatches(batches []logBatch) error {
