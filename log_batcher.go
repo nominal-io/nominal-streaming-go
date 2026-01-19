@@ -231,7 +231,8 @@ func (b *logBatcher) sendLogBatches(batches []logBatch) error {
 	}
 
 	if err := b.apiClient.writeLogs(b.ctx, b.datasetRID, req); err != nil {
-		return fmt.Errorf("failed to write logs: %w", err)
+		// Wrap API errors in NominalError to expose structured error information
+		return wrapAPIError(err)
 	}
 
 	return nil

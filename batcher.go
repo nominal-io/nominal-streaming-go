@@ -479,7 +479,8 @@ func (b *batcher) sendBatches(floatBatches []floatBatch, intBatches []intBatch, 
 	}
 
 	if err := b.apiClient.writeNominalData(b.ctx, b.datasetRID, request); err != nil {
-		return fmt.Errorf("failed to send batch: %w", err)
+		// Wrap API errors in NominalError to expose structured error information
+		return wrapAPIError(err)
 	}
 	return nil
 }
