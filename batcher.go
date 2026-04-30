@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log"
-	"math"
 	"sort"
 	"sync"
 	"time"
@@ -130,7 +129,7 @@ func newBatcher(
 		closeChan:          make(chan struct{}),
 		flushSize:          flushSize,
 		flushPeriod:        flushPeriod,
-		errors:             make(chan error, 256), // Increased from 100 to handle burst errors
+		errors:             make(chan error, 100),
 		ctx:                ctx,
 		apiClient:          apiClient,
 		datasetRID:         datasetRID,
@@ -512,13 +511,6 @@ func convertFloatBatchToProto(batch floatBatch) (*pb.Series, error) {
 
 	points := make([]*pb.DoublePoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
-		// Validate float values - NaN and Inf are not valid for protobuf/JSON serialization
-		if math.IsNaN(batch.Values[i]) {
-			return nil, fmt.Errorf("invalid float value at index %d: NaN is not allowed", i)
-		}
-		if math.IsInf(batch.Values[i], 0) {
-			return nil, fmt.Errorf("invalid float value at index %d: Inf is not allowed", i)
-		}
 		points[i] = &pb.DoublePoint{
 			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
@@ -591,15 +583,6 @@ func convertFloatArrayBatchToProto(batch floatArrayBatch) (*pb.Series, error) {
 
 	points := make([]*pb.DoubleArrayPoint, len(batch.Timestamps))
 	for i := range batch.Timestamps {
-		// Validate all float values in the array
-		for j, v := range batch.Values[i] {
-			if math.IsNaN(v) {
-				return nil, fmt.Errorf("invalid float array value at index [%d][%d]: NaN is not allowed", i, j)
-			}
-			if math.IsInf(v, 0) {
-				return nil, fmt.Errorf("invalid float array value at index [%d][%d]: Inf is not allowed", i, j)
-			}
-		}
 		points[i] = &pb.DoubleArrayPoint{
 			Timestamp: nanosecondsToTimestampProto(batch.Timestamps[i]),
 			Value:     batch.Values[i],
@@ -650,23 +633,13 @@ func convertStringArrayBatchToProto(batch stringArrayBatch) (*pb.Series, error) 
 }
 
 // nanosecondsToTimestampProto converts nanoseconds to protobuf Timestamp.
-// nanosecondsToTimestampProto converts nanoseconds to protobuf Timestamp.
-// Handles negative timestamps correctly by ensuring Nanos is always in [0, 999999999].
 func nanosecondsToTimestampProto(nanos NanosecondsUTC) *timestamppb.Timestamp {
 	nanosInt64 := int64(nanos)
 	seconds := nanosInt64 / 1_000_000_000
-	remainingNanos := nanosInt64 % 1_000_000_000
-
-	// For negative timestamps, the modulo can be negative.
-	// Protobuf Timestamp requires Nanos to be in [0, 999999999].
-	// Adjust by borrowing from seconds.
-	if remainingNanos < 0 {
-		seconds--
-		remainingNanos += 1_000_000_000
-	}
+	remainingNanos := int32(nanosInt64 % 1_000_000_000)
 
 	return &timestamppb.Timestamp{
 		Seconds: seconds,
-		Nanos:   int32(remainingNanos),
+		Nanos:   remainingNanos,
 	}
 }
