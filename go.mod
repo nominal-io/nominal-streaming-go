@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/palantir/conjure-go-runtime/v2 v2.97.0
 	github.com/palantir/pkg/bearertoken v1.1.0
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
